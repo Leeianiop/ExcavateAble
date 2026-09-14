@@ -138,6 +138,131 @@ Where a package is marked **(optional)**, the subsystem has a graceful mock/fall
 
 ---
 
+### 4.0 — INSTALL LOCATION DECISION MATRIX (read this first!)
+
+The project has **two code folders → two physical machines**. This table answers, for *every* package group, **which machine you run the install commands on**:
+
+| Package group / folder                 | Install on 🖥️ **Machine A — Backend Host** (your Windows/macOS/Linux laptop, desktop, or server, x86_64 or ARM64, 16+ GB RAM preferred) | Install on 🍓 **Machine B — Raspberry Pi 5** (the Pi 5 8GB with camera + Hailo-8L HAT) |
+| -------------------------------------- | :-------: | :-------: |
+| `SnakeBot/backend/` folder + Docker    | ✅ **YES** — `cd backend` lives here, `docker compose up` runs here | ❌ NO — (only backend mock mode *can* run here for CI, never real COLMAP/OpenMVS) |
+| `SnakeBot/edge_node/` folder           | ✅ *Optional* — for local mock dev on laptop (§4.8) | ✅ **YES** — this is where the camera/Hailo physically live |
+| Docker Desktop / Docker Engine         | ✅ **YES** — on the backend host                     | ❌ NO — (technically installable, but COLMAP image will OOM on 8 GB) |
+| Docker compose stack (redis, minio, api, worker) | ✅ **YES** — `docker compose up --build -d` runs here | ❌ NO                                  |
+| **COLMAP** (§4.4 — dense recon)       | ✅ **YES** — only on this machine. See 3 install paths in §4.4. | ❌ **DO NOT INSTALL ON PI 5.** §4.4 warning explains: ≥14 GB RAM usage + OOM + 10–30× slowdown + thermal throttle. |
+| **OpenMVS** (§4.4 — texturing)        | ✅ **YES** — only on this machine. Build-from-source script in §4.4. | ❌ **DO NOT INSTALL ON PI 5.** Same OOM/thermal issues, takes hours vs minutes on x86/CUDA. |
+| `trimesh` / `open3d` (§4.3, optional 3D pip) | ✅ **YES** — backend worker pip install, used in decimation + GLB fallback | ❌ NO — not used on the edge; edge only *captures* and *uploads*, never decimates meshes. |
+| Backend Python pip deps (§4.3: fastapi / celery / redis / minio / …) | ✅ **YES** — if running §A2 local venv (no Docker). Auto-installed inside container if using Docker path. | ❌ NO — backend doesn't run on Pi (unless mock smoke-test only). |
+| Backend apt layer (§4.2: curl/ca-certificates/libgomp1) | ✅ **YES** — if §A2 no-Docker. Auto-in Dockerfile. | ❌ NO                                  |
+| **Picamera2** (apt: `python3-picamera2`) | ❌ NO — laptop cameras aren't wired to libcamera HAL. | ✅ **YES** — this is the Pi camera driver, lives only here. |
+| **HailoRT SDK** (§4.6, apt: `hailort` + `hailort-py`) | ❌ NO — no Hailo hardware inside a normal laptop/desktop. | ✅ **YES** — only on the Pi 5 with the Hailo-8L HAT physically installed. |
+| Edge Node Python pip deps (§4.7: PyYAML / numpy / Pillow / httpx / opencv-python-headless) | ✅ *Optional* — for §B3 mock dev on laptop. | ✅ **YES** — install into the `.venv` on the Pi 5. |
+
+**TL;DR folder → machine rule of thumb:**
+- **`backend/` directory + COLMAP + OpenMVS + trimesh/open3d** → live on **your big computer (laptop/desktop/server)**. This is CPU/RAM/GPU-heavy work.
+- **`edge_node/` directory + Picamera2 apt + HailoRT apt** → live on **the Raspberry Pi 5**. This is hardware-capture + Hailo-accelerated AI, then upload. That's it.
+- You **can** also `git clone` the entire `SnakeBot/` repo onto *both* machines if you want; just follow the install commands for *that machine's* section.
+
+---
+
+### 4.0b — PER-MACHINE INSTALL CHEAT SHEET (copy-paste in order)
+
+Pick the sheet that matches the machine you are physically sitting at.
+
+**🖥️ Machine A — Backend Host (your laptop / desktop / server):**
+```bash
+# ------------------------------------------------------------------
+# Step 0 (if Windows): enable WSL2 first, then open an Ubuntu shell
+#   wsl --install -d Ubuntu-24.04
+# ------------------------------------------------------------------
+
+# 1. Install Docker (only if you don't already have Docker Desktop)
+#    -> https://docs.docker.com/engine/install/ubuntu/   (Linux)
+#    -> https://www.docker.com/products/docker-desktop/   (Windows/macOS)
+docker --version     # confirm >= 24.0
+docker compose version
+
+# 2. Clone the repo (if not cloned yet)
+git clone <your-repo-url> SnakeBot
+cd SnakeBot
+
+# 3. Bring up backend (Redis + MinIO + API + Worker — 4 containers)
+cd backend
+cp .env.example .env
+docker compose up --build -d
+# wait ~30 s; all 4 services should be "healthy"
+docker compose ps
+
+# 4. OPTIONAL PRODUCTION — install COLMAP 3.9.1 + OpenMVS 2.2.0 with CUDA:
+#    Save the §4.4 "Option 3" block as backend/Dockerfile.cuda, then:
+#    docker compose down -v
+#    # edit docker-compose.yml: build.dockerfile -> Dockerfile.cuda; worker.runtime: nvidia
+#    docker compose up --build -d
+#    OR install directly on metal via §4.4 Option 1 apt / Option 2 conda + §4.4 openmvs build script
+
+# 5. OPTIONAL: extra 3D pip deps inside existing venv (not needed if you use Docker, worker installs them)
+#    cd backend
+#    pip install -r requirements.txt
+#    pip install "trimesh>=4.0" "open3d>=0.18" --default-timeout=300
+
+# Verify: http://localhost:8000/api/v1/health  returns {"status":"ok"}
+curl http://localhost:8000/api/v1/health
+```
+
+**🍓 Machine B — Raspberry Pi 5 (ssh into it, Hailo-8L + camera physically installed):**
+```bash
+# 1. OS flash + boot: Raspberry Pi Imager → Bookworm Lite 64-bit, SSH on, Wi-Fi on
+#    Then from your laptop:
+#    ssh pi@scan-pi-01.local
+
+# 2. System update + Picamera2 + libcamera + python venv + git
+sudo apt update && sudo apt full-upgrade -y
+sudo apt install -y \
+  python3-picamera2 python3-libcamera \
+  python3-pip python3-venv git
+sudo reboot
+
+# 3. After reboot, log back in. Verify camera.
+libcamera-hello --list-cameras
+# -> should see "Available cameras" with 1 entry
+
+# 4. Install Hailo-8L SDK (hailort + hailort-py via Hailo apt repo)
+curl -fsSL https://hailo.ai/apt/KEY.gpg \
+  | sudo gpg --dearmor -o /usr/share/keyrings/hailo-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/hailo-archive-keyring.gpg] \
+  https://hailo.ai/apt/ bookworm main" \
+  | sudo tee /etc/apt/sources.list.d/hailo.list
+sudo apt update
+sudo apt install -y hailort hailort-py
+hailortcli scan     # -> 1 Hailo-8L on PCIe
+
+# 5. Project + Python deps into an isolated venv (Bookworm PEP-668 requires this)
+cd ~
+git clone <your-repo-url> SnakeBot
+cd SnakeBot/edge_node
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+# -> installs PyYAML, numpy, Pillow, httpx, + opencv-python-headless if listed
+
+# 6. Drop Hailo .hef model files into SnakeBot/edge_node/models/ (§B2)
+#    scp yolov8n-seg.hef dpt_lite.hef pi@scan-pi-01.local:~/SnakeBot/edge_node/models/
+
+# 7. Point upload at Machine A's LAN IP/hostname (NOT localhost:8000 from Pi)
+#    edit SnakeBot/edge_node/config/config.yaml line 30:
+#      upload.backend_url: "http://192.168.1.42:8000"    # <- Machine A's LAN IP
+python -m edge_node health-check
+# -> all [OK], last line confirms backend /health returned 200
+```
+
+That's the full two-machine install flow. Once both check out, run the §7 E2E smoke test from the Pi 5:
+```bash
+cd ~/SnakeBot/edge_node
+source .venv/bin/activate
+python -m edge_node capture-and-upload --shots 20 --interval 1.5 --wait
+```
+
+---
+
 ### 4.1 Backend Host — Container Runtime
 
 These are the **only** packages you need to install manually on the host if you use the Docker path (recommended). Python, Redis, MinIO, FastAPI, and the worker run entirely inside containers.
