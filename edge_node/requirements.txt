@@ -1,0 +1,32 @@
+# ============================================================
+# 3D Scanning Web App — Edge Capture Node
+# Raspberry Pi 5 (8GB) + Pi Camera Module + Hailo-8L AI HAT
+# ============================================================
+# Target Python: 3.11 (Raspberry Pi OS Bookworm / 64-bit)
+# ============================================================
+
+# -------- Core dependencies (install always) --------
+PyYAML>=6.0
+numpy>=1.24,<2
+Pillow>=10.0
+httpx>=0.25
+
+# -------- Computer vision image processing (optional) --------
+# Fallback resizers exist if these are missing
+opencv-python-headless>=4.8
+
+# -------- Camera: Raspberry Pi Camera Module (Picamera2) --------
+# Installed via apt on Raspberry Pi OS (pip package not officially supported)
+#   sudo apt install -y python3-picamera2 python3-libcamera
+# Picamera2
+
+# -------- Hailo-8L SDK (AI acceleration) --------
+# Installed from Hailo official repositories, NOT via PyPI:
+#   https://github.com/hailo-ai/hailort  (HailoRT runtime)
+#   https://github.com/hailo-ai/hailo_model_zoo  (pre-compiled .hef models)
+#   sudo apt install -y hailort hailort-py
+# hailo_platform  # (imported as from hailo_platform import HEF, HAILO, ...)
+
+# -------- Dev / testing (optional) --------
+# pytest>=7.0
+# ruff>=0.1

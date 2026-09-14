@@ -1,0 +1,45 @@
+version: "1.0"
+
+capture:
+  resolution:
+    width: 4056
+    height: 3040
+  framerate: 30
+  iso: 100
+  shutter_speed: 0
+  awb_mode: "auto"
+  exposure_mode: "auto"
+  num_shots: 20
+  shot_interval_sec: 1.5
+  save_raw: true
+  save_jpeg: true
+  jpeg_quality: 95
+
+hailo:
+  segmentation_model_path: "./models/yolov8n-seg.hef"
+  depth_model_path: "./models/dpt_lite.hef"
+  input_width: 640
+  input_height: 640
+  depth_input_width: 518
+  depth_input_height: 518
+  threshold: 0.5
+  nms_threshold: 0.45
+  device_id: 0
+
+upload:
+  backend_url: "http://localhost:8000"
+  api_key: ""
+  upload_timeout_sec: 120
+  max_retries: 3
+  retry_delay_sec: 5
+
+storage:
+  local_dir: "./captures"
+  keep_local_after_upload: true
+  max_local_gb: 10
+
+logging:
+  level: "INFO"
+  file: "./logs/edge_node.log"
+  max_bytes: 10485760
+  backup_count: 5
