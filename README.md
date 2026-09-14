@@ -159,6 +159,15 @@ Installed automatically inside the [backend/Dockerfile](file:///C:/Users/seeru/O
 | `ca-certificates` | TLS root store (for Hailo/MinIO HTTPS endpoints)       | ✅ Yes    |
 | `libgomp1`        | OpenMP runtime for numpy / OpenCV SIMD in worker       | ✅ Yes    |
 
+Install copy-paste (Debian/Ubuntu / Linux Mint / any deb-based backend host, outside Docker):
+```bash
+sudo apt-get update && sudo apt-get install -y --no-install-recommends \
+  curl \
+  ca-certificates \
+  libgomp1
+```
+macOS / Windows host users: skip this section entirely — use the Docker path (§A1) or a WSL2 Ubuntu VM.
+
 Base image the Dockerfile uses: **`python:3.11-slim-bookworm`** (Debian 12, Python 3.11.x). If running backend outside Docker, use a matching **Python 3.11** interpreter.
 
 ---
@@ -188,9 +197,35 @@ All pinned minimums are from [backend/requirements.txt](file:///C:/Users/seeru/O
 
 Install **only required** packages (the default `requirements.txt` is already trimmed this way — 3D + dev lines are commented out).
 
+One-line installs:
+```bash
+# --- Required packages (already in requirements.txt) ---
+cd backend
+pip install -r requirements.txt
+
+# --- Optional: 3D post-processing libs (decimation + GLB fallback) ---
+# Uncommented below lines install trimesh + open3d. open3d wheel ~500 MB.
+pip install "trimesh>=4.0"
+# open3d has platform-specific wheels; if this fails check pypi.org/project/open3d for your Python/arch combo
+pip install "open3d>=0.18" --default-timeout=300
+
+# --- Optional: dev tools ---
+pip install "pytest>=7.0" "ruff>=0.1"
+```
+
 ---
 
 ### 4.4 Backend — 3D Reconstruction Binaries (production, optional)
+
+> ⚠️ **DO NOT install COLMAP or OpenMVS on the Raspberry Pi 5.**
+>
+> The Pi 5's role in this architecture is **edge capture only** — it shoots photos, runs background segmentation + depth on the Hailo-8L, and **uploads the bundle to the backend host**. Photogrammetry reconstruction runs on a **separate backend machine** (your x86/ARM64 laptop/desktop/server) via §A1 Docker:
+>
+> - COLMAP dense (patch_match_stereo + stereo_fusion) on 20 × 12 MP photos typically uses **≥14 GB RAM** and **4–8 CPU threads for 30–120 min**; a Pi 5 8GB will **OOM-kill**, **thermal-throttle to 600 MHz** (5W cap), and finish **10–30× slower** than a mid-range laptop.
+> - OpenMVS `DensifyPointCloud + TextureMesh` on CUDA is 40× faster again vs Pi 5 CPU.
+> - Backend Docker images run fine on **Pi 5 ARM64 in mock mode** (CI, smoke tests); only the COLMAP/OpenMVS stages are unsuitable there.
+>
+> If you only have a Pi 5 and no other host, skip real COLMAP entirely — the backend's pure-Python mock PLY/GLB pipeline (Stage 9 fallback) will still produce valid downloadable meshes so you can validate the upload → job → viewer roundtrip end-to-end.
 
 The default Docker image runs a pure-Python mock PLY/GLB writer so you can exercise the upload → job → asset pipeline today. For **real photogrammetry**, add the system binaries below and point `COLMAP_BIN` / `OPENMVS_DIR` at them via [.env](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/.env.example#L30-L33):
 
@@ -198,12 +233,116 @@ The default Docker image runs a pure-Python mock PLY/GLB writer so you can exerc
 | ----------------- | ----------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
 | **COLMAP**        | 3.8+        | https://colmap.github.io/install.html (apt for Debian: `colmap` or CUDA build from `nvidia/cuda:11.8.0-devel-ubuntu22.04`) | Stage 3 — feature_extractor, exhaustive_matcher, mapper; Stage 4 — image_undistorter, patch_match_stereo, stereo_fusion |
 | **OpenMVS**       | 2.2+        | Build from source with CUDA: https://github.com/cdcseacave/openMVS  (binary dir typically `/usr/local/bin/OpenMVS`) | Stage 5 — InterfaceCOLMAP, DensifyPointCloud, ReconstructMesh, RefineMesh, TextureMesh |
-| trimesh / open3d  | §4.3 above  | `pip install trimesh open3d` (commented lines)                     | Stage 6 — decimation + cleaning fallback if OpenMVS RefineMesh skipped; Stage 7/8 — alternative PLY/GLB writer            |
+| trimesh / open3d  | §4.3 above  | `pip install trimesh open3d` (see §4.3 install block)             | Stage 6 — decimation + cleaning fallback if OpenMVS RefineMesh skipped; Stage 7/8 — alternative PLY/GLB writer            |
+
+---
+
+#### Installing COLMAP (3 options, pick 1)
+
+Run **on the backend host** (x86_64 laptop/server), NOT on the Pi 5.
+
+**Option 1 — Debian/Ubuntu apt (fastest, CPU-only, colmap 3.8 in testing/sid or bookworm-backports):**
+```bash
+# Debian 12 Bookworm: enable bookworm-backports first
+echo "deb http://deb.debian.org/debian bookworm-backports main contrib non-free non-free-firmware" \
+  | sudo tee /etc/apt/sources.list.d/backports.list
+sudo apt update
+sudo apt install -y -t bookworm-backports colmap
+
+# Ubuntu 24.04 / 23.10: direct from universe
+# sudo apt install -y colmap
+
+# Verify
+colmap -h          # prints usage + version (expect 3.8+)
+which colmap       # -> /usr/bin/colmap (set COLMAP_BIN=colmap in .env)
+```
+
+**Option 2 — conda-forge (cross-platform, macOS/Linux/Windows x64, latest):**
+```bash
+conda install -c conda-forge colmap
+# or
+mamba install -c conda-forge colmap
+conda run colmap -h
+# COLMAP_BIN=$(conda run which colmap)   -> put this in .env
+```
+
+**Option 3 — CUDA-accelerated Docker build (recommended for ≥ 100 photo sessions, NVIDIA GPU only):**
+Save as `backend/Dockerfile.cuda` next to the existing non-CUDA Dockerfile:
+```dockerfile
+# backend/Dockerfile.cuda  —  real photogrammetry build (~8 GB image)
+FROM nvidia/cuda:11.8.0-devel-ubuntu22.04 AS base
+ENV DEBIAN_FRONTEND=noninteractive PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        software-properties-common curl ca-certificates libgomp1 git cmake ninja-build \
+        build-essential libboost-all-dev libeigen3-dev libfreeimage-dev \
+        libgoogle-glog-dev libgtest-dev libsqlite3-dev libglew-dev qtbase5-dev \
+        libcgal-dev libcgal-qt5-dev libmetis-dev libceres-dev \
+        python3.11 python3.11-venv python3-pip \
+    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Colmap 3.9 from source with CUDA
+WORKDIR /opt/colmap
+RUN git clone --depth 1 --branch 3.9.1 https://github.com/colmap/colmap.git src \
+ && cmake -S src -B build -GNinja -DCMAKE_BUILD_TYPE=Release -DCUDA_ENABLED=ON \
+ && cmake --build build --parallel $(nproc) && cmake --install build
+
+# OpenMVS 2.2 from source with CUDA
+WORKDIR /opt/openmvs
+RUN git clone --depth 1 --branch v2.2.0 https://github.com/cdcseacave/openMVS.git src \
+ && cmake -S src -B build -GNinja -DCMAKE_BUILD_TYPE=Release \
+         -DOpenMVS_USE_CUDA=ON -DOpenMVS_BUILD_VIEWER=OFF -DVCG_DIR=/opt/openmvs/vcglib \
+ && cmake --build build --parallel $(nproc) && cmake --install build
+
+WORKDIR /app
+COPY requirements.txt /app/requirements.txt
+RUN pip3 install --no-cache-dir -r /app/requirements.txt && pip3 install --no-cache-dir "trimesh>=4.0"
+COPY app /app/app
+ENV COLMAP_BIN=colmap OPENMVS_DIR=/usr/local/bin/OpenMVS
+EXPOSE 8000
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+Then edit `backend/docker-compose.yml`: change `api.build.dockerfile` and `worker.build.dockerfile` from `Dockerfile` to `Dockerfile.cuda`, and add `runtime: nvidia` + device request under `worker`. Verify GPU with `docker run --rm --gpus all <image> colmap -h`.
+
+---
+
+#### Installing OpenMVS (production builds only)
+
+Skip if you only need the mock pipeline or the trimesh fallback. **OpenMVS has no universal apt/conda package** — build it from source. Run on the backend x86 host:
+
+```bash
+# 1. Build-time deps (Debian/Ubuntu)
+sudo apt-get update && sudo apt-get install -y --no-install-recommends \
+  build-essential cmake git libboost-all-dev libeigen3-dev \
+  libopencv-dev libcgal-dev libceres-dev libfreeimage-dev \
+  libglew-dev libglfw3-dev libcgal-qt5-dev qtbase5-dev \
+  nvidia-cuda-toolkit   # omit if no GPU
+
+# 2. VCG (header-only, OpenMVS dep)
+sudo mkdir -p /opt/openmvs && cd /opt/openmvs
+sudo git clone --depth 1 https://github.com/cdcseacave/VCG.git vcglib
+
+# 3. Clone + build OpenMVS
+sudo git clone --depth 1 --branch v2.2.0 https://github.com/cdcseacave/openMVS.git src
+sudo cmake -S src -B build -GNinja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DOpenMVS_USE_CUDA=ON \
+    -DOpenMVS_BUILD_VIEWER=OFF \
+    -DVCG_DIR=/opt/openmvs/vcglib
+sudo cmake --build build --parallel $(nproc)
+sudo cmake --install build   # -> installs binaries to /usr/local/bin/OpenMVS
+
+# 4. Verify
+ls /usr/local/bin/OpenMVS
+# -> DensifyPointCloud, InterfaceCOLMAP, ReconstructMesh, RefineMesh, TextureMesh
+# Set OPENMVS_DIR=/usr/local/bin/OpenMVS in backend/.env
+```
 
 Fallback chain (what runs if each level is missing):
-- COLMAP missing → Stage 3/4 no-op, pass through black image list → Stage 5 no-op
+- COLMAP missing → Stage 3/4 no-op, pass through image list → Stage 5 no-op
 - OpenMVS missing → Stage 5 no-op
 - Both missing → **Stage 9 mock pipeline**: pure-Python/numpy cylinder mesh + ASCII PLY writer + PIL texture atlas → valid `scan.ply` + `scan.glb`
+
 
 ---
 
@@ -379,6 +518,10 @@ curl http://localhost:8000/api/v1/health
 ---
 
 ## 6. Part B — Edge Capture Node
+
+> 🔁 **Architecture reminder for the Pi 5**:
+>
+> Install only **camera, Hailo SDK, Python deps, and upload client** on the Pi 5. **Do not install COLMAP / OpenMVS / the reconstruction worker here.** After `capture-and-upload` the Pi 5's job is done — the backend host (§A1) pulls the bundle from MinIO and runs the 9-stage reconstruction pipeline. If you have no other host, run the backend Docker compose stack directly on the Pi 5 in **mock mode** — you'll still get valid PLY/GLB outputs for the viewer.
 
 ### B1 — Raspberry Pi 5 Production Setup
 
