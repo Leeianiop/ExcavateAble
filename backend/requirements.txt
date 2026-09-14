@@ -1,0 +1,32 @@
+# 3D Scanning Web App — Backend Reconstruction Service
+# -----------------------------------------------------
+# Target: reconstruction workers inside Docker containers or on GPU machines.
+# Install COLMAP + OpenMVS via system package managers for production; those deps
+# are listed but not pinned since they're system-level, not PyPI.
+
+# --- API / web framework ---
+fastapi>=0.105
+uvicorn[standard]>=0.24
+pydantic>=2.5
+pydantic-settings>=2.1
+
+# --- Queues / storage clients ---
+celery>=5.3
+redis>=5.0
+minio>=7.2
+httpx>=0.25
+
+# --- Python data / image ---
+numpy>=1.24,<2
+Pillow>=10.0
+PyYAML>=6.0
+
+# --- 3D post-processing (optional, used in decimation/GLB export fallback) ---
+# Install if you want mesh decimation + watertight export without OpenMVS TextureMesh:
+# trimesh>=4.0
+# open3d>=0.18
+
+# --- Dev / testing (optional) ---
+# pytest>=7.0
+# ruff>=0.1
+# python-multipart>=0.0.6   # (pulled in by FastAPI UploadFile)
