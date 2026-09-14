@@ -5,7 +5,15 @@
 1. [Project Overview](#1-project-overview)
 2. [System Architecture](#2-system-architecture)
 3. [Hardware Requirements](#3-hardware-requirements)
-4. [Software Prerequisites](#4-software-prerequisites)
+4. [Software & Package Requirements](#4-software--package-requirements)
+   - [4.1 Backend Host — Container Runtime](#41-backend-host--container-runtime)
+   - [4.2 Backend — System Packages (apt / image layer)](#42-backend--system-packages-apt--image-layer)
+   - [4.3 Backend — Python Packages (pip)](#43-backend--python-packages-pip)
+   - [4.4 Backend — 3D Reconstruction Binaries (production, optional)](#44-backend--3d-reconstruction-binaries-production-optional)
+   - [4.5 Edge Node — Raspberry Pi OS + System Apt Packages](#45-edge-node--raspberry-pi-os--system-apt-packages)
+   - [4.6 Edge Node — Hailo-8L SDK Packages](#46-edge-node--hailo-8l-sdk-packages)
+   - [4.7 Edge Node — Python Packages (pip)](#47-edge-node--python-packages-pip)
+   - [4.8 Local Dev Mock Mode (no hardware)](#48-local-dev-mock-mode-no-hardware)
 5. [Part A — Backend Reconstruction Service](#5-part-a--backend-reconstruction-service)
    - [A1 — Quick Start (Docker, recommended)](#a1--quick-start-docker-recommended)
    - [A2 — Local Dev (no Docker)](#a2--local-dev-no-docker)
@@ -118,32 +126,183 @@ Any x86_64 / ARM64 machine with Docker ≥ 24:
 
 ---
 
-## 4. Software Prerequisites
+## 4. Software & Package Requirements
 
-### 4.1 Backend Host
+Every package below is listed **verbatim** from the project's manifest files:
+- Backend pip: [backend/requirements.txt](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/requirements.txt)
+- Backend system apt layer: [backend/Dockerfile](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/Dockerfile#L19-L23)
+- Edge node pip: [edge_node/requirements.txt](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/edge_node/requirements.txt)
+- Edge node system: Raspberry Pi OS Bookworm apt packages listed inline with install commands
 
-| Tool     | Min Version | Install link                                    |
-| -------- | ----------- | ----------------------------------------------- |
-| Docker   | 24.0        | https://docs.docker.com/engine/install/         |
-| Compose  | v2 (plugin) | Included with Docker Desktop / Engine 24+       |
+Where a package is marked **(optional)**, the subsystem has a graceful mock/fallback — you can skip it and the pipeline still runs end-to-end.
 
-That's it — Python, Redis, MinIO, FastAPI, and the worker all run inside containers.
+---
 
-### 4.2 Raspberry Pi 5 (Edge Node)
+### 4.1 Backend Host — Container Runtime
 
-| Tool            | Notes                                                        |
-| --------------- | ------------------------------------------------------------ |
-| Raspberry Pi OS | **Bookworm 64-bit** (desktop or lite; Python 3.11 included)  |
-| Picamera2       | `sudo apt install -y python3-picamera2 python3-libcamera`    |
-| HailoRT         | Add Hailo apt repo, then `sudo apt install hailort hailort-py` |
-| Python pip deps | `pip install -r edge_node/requirements.txt`                  |
+These are the **only** packages you need to install manually on the host if you use the Docker path (recommended). Python, Redis, MinIO, FastAPI, and the worker run entirely inside containers.
 
-### 4.3 Local Dev (Mock Mode, no hardware)
+| Tool                 | Min Version | Where / how to install                              | Required? |
+| -------------------- | ----------- | ---------------------------------------------------- | --------- |
+| Docker Engine        | 24.0        | https://docs.docker.com/engine/install/              | ✅ Yes    |
+| Docker Compose (v2)  | plugin v2   | Included with Docker Desktop / Engine 24+            | ✅ Yes    |
 
-- Python ≥ 3.11
-- pip
+---
 
-No Docker required for pure edge-node+backend smoke test if you run them directly (see §A2 and §B3).
+### 4.2 Backend — System Packages (apt / image layer)
+
+Installed automatically inside the [backend/Dockerfile](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/Dockerfile#L19-L23) `apt-get install` step. Listed here if you are running backend locally without Docker (§A2):
+
+| Apt package       | Pulled into image for —                                 | Required? |
+| ----------------- | ------------------------------------------------------- | --------- |
+| `curl`            | Healthcheck probes, CLI downloads                      | ✅ Yes    |
+| `ca-certificates` | TLS root store (for Hailo/MinIO HTTPS endpoints)       | ✅ Yes    |
+| `libgomp1`        | OpenMP runtime for numpy / OpenCV SIMD in worker       | ✅ Yes    |
+
+Base image the Dockerfile uses: **`python:3.11-slim-bookworm`** (Debian 12, Python 3.11.x). If running backend outside Docker, use a matching **Python 3.11** interpreter.
+
+---
+
+### 4.3 Backend — Python Packages (pip)
+
+All pinned minimums are from [backend/requirements.txt](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/requirements.txt). Install inside container (automatic) or in a venv for §A2 local dev with `pip install -r backend/requirements.txt`.
+
+| Group                   | PyPI package               | Min pin         | Used in file(s)                                                                 |
+| ----------------------- | -------------------------- | --------------- | ------------------------------------------------------------------------------- |
+| **API / web framework** | `fastapi`                  | `>=0.105`       | [main.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/app/main.py) |
+|                         | `uvicorn[standard]`        | `>=0.24`        | Dockerfile CMD, compose `command:` blocks                                        |
+|                         | `pydantic`                 | `>=2.5`         | [schemas.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/app/schemas.py) response models |
+|                         | `pydantic-settings`        | `>=2.1`         | [config.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/app/config.py) `.env` loader |
+| **Queue / storage**     | `celery`                   | `>=5.3`         | [tasks.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/app/workers/tasks.py) async recon jobs |
+|                         | `redis`                    | `>=5.0`         | Celery broker + result backend, job cache                                       |
+|                         | `minio`                    | `>=7.2`         | [object_store.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/app/storage/object_store.py) S3-compatible PUT/presign |
+|                         | `httpx`                    | `>=0.25`        | Object-store S3 presign fallback calls, health probes                          |
+| **Data / image**        | `numpy`                    | `>=1.24,<2`     | [reconstruction.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/app/workers/reconstruction.py) mock PLY vertex math |
+|                         | `Pillow`                   | `>=10.0`        | Texture atlas generation, image re-encoding during background-strip            |
+|                         | `PyYAML`                   | `>=6.0`         | Debug config dump, manifest validation                                          |
+| **(Optional) 3D libs**  | `trimesh`                  | `>=4.0`         | ⬜ PLY quadric decimation + GLB export fallback if no OpenMVS TextureMesh      |
+|                         | `open3d`                   | `>=0.18`        | ⬜ Mesh cleaning / poisson / watertight post-processing (CPU or CUDA build)     |
+| **(Optional) dev**      | `pytest`                   | `>=7.0`         | ⬜ Unit / E2E test runner                                                        |
+|                         | `ruff`                     | `>=0.1`         | ⬜ Lint + import ordering + style                                                |
+| *(implicit, FastAPI)*   | `python-multipart`         | `>=0.0.6`       | UploadFile body parser for `/bundles/{bid}/shots/{sid}/{role}` PUT route         |
+
+Install **only required** packages (the default `requirements.txt` is already trimmed this way — 3D + dev lines are commented out).
+
+---
+
+### 4.4 Backend — 3D Reconstruction Binaries (production, optional)
+
+The default Docker image runs a pure-Python mock PLY/GLB writer so you can exercise the upload → job → asset pipeline today. For **real photogrammetry**, add the system binaries below and point `COLMAP_BIN` / `OPENMVS_DIR` at them via [.env](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/.env.example#L30-L33):
+
+| Binary / suite    | Min version | Where to get it                                                    | Used in stage(s) — [reconstruction.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/app/workers/reconstruction.py) |
+| ----------------- | ----------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| **COLMAP**        | 3.8+        | https://colmap.github.io/install.html (apt for Debian: `colmap` or CUDA build from `nvidia/cuda:11.8.0-devel-ubuntu22.04`) | Stage 3 — feature_extractor, exhaustive_matcher, mapper; Stage 4 — image_undistorter, patch_match_stereo, stereo_fusion |
+| **OpenMVS**       | 2.2+        | Build from source with CUDA: https://github.com/cdcseacave/openMVS  (binary dir typically `/usr/local/bin/OpenMVS`) | Stage 5 — InterfaceCOLMAP, DensifyPointCloud, ReconstructMesh, RefineMesh, TextureMesh |
+| trimesh / open3d  | §4.3 above  | `pip install trimesh open3d` (commented lines)                     | Stage 6 — decimation + cleaning fallback if OpenMVS RefineMesh skipped; Stage 7/8 — alternative PLY/GLB writer            |
+
+Fallback chain (what runs if each level is missing):
+- COLMAP missing → Stage 3/4 no-op, pass through black image list → Stage 5 no-op
+- OpenMVS missing → Stage 5 no-op
+- Both missing → **Stage 9 mock pipeline**: pure-Python/numpy cylinder mesh + ASCII PLY writer + PIL texture atlas → valid `scan.ply` + `scan.glb`
+
+---
+
+### 4.5 Edge Node — Raspberry Pi OS + System Apt Packages
+
+**Base OS requirement**: **Raspberry Pi OS Bookworm 64-bit** (Lite or Desktop). This is non-negotiable — Bullseye ships Python 3.9, the Hailo apt repo is built against Bookworm Python 3.11, and Picamera2/libcamera APIs changed across the release.
+
+Flash tool: **Raspberry Pi Imager** (https://www.raspberrypi.com/software/) → choose "Raspberry Pi OS Lite (64-bit)".
+
+After first boot, install these **Raspberry Pi OS apt packages** (commands also reproduced in §B1):
+
+```bash
+sudo apt update && sudo apt full-upgrade -y
+sudo apt install -y \
+  python3-picamera2 \
+  python3-libcamera \
+  python3-pip \
+  python3-venv \
+  git
+sudo reboot
+```
+
+| Apt package             | Purpose                                                                      | Required? |
+| ----------------------- | ---------------------------------------------------------------------------- | --------- |
+| `python3-picamera2`     | Official libcamera Python bindings for the Pi Camera Module (not on PyPI)    | ✅ Yes    |
+| `python3-libcamera`    | Low-level libcamera + sensor tuning shared libs                              | ✅ Yes (dep of picamera2) |
+| `python3-pip`           | Pulls in pip for `python3 -m pip install …` in the venv                      | ✅ Yes    |
+| `python3-venv`          | `python3 -m venv .venv` isolated env (needed because Bookworm PEP-668)       | ✅ Yes    |
+| `git`                   | Clone the project (or use `scp` / USB transfer instead)                      | ✅ Yes    |
+
+---
+
+### 4.6 Edge Node — Hailo-8L SDK Packages
+
+HailoRT packages are **distributed via Hailo's own apt repository**, **not via PyPI**, so `pip install hailort` will not work. Install per §B1 step 3, reproduced here for the package list:
+
+```bash
+curl -fsSL https://hailo.ai/apt/KEY.gpg \
+  | sudo gpg --dearmor -o /usr/share/keyrings/hailo-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/hailo-archive-keyring.gpg] \
+  https://hailo.ai/apt/ bookworm main" \
+  | sudo tee /etc/apt/sources.list.d/hailo.list
+sudo apt update
+sudo apt install -y hailort hailort-py
+```
+
+| Hailo apt package    | Files it installs                                                                      | Used in module: [edge_node/ai/hailo_engine.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/edge_node/ai/hailo_engine.py) |
+| -------------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `hailort`            | `/usr/bin/hailortcli`, `libhailort.so*`, Hailo PCIe kernel driver + udev rules         | Device probe, InferVStreams runtime, .hef loader                                            |
+| `hailort-py`         | `hailo_platform` Python 3.11 wheel → `from hailo_platform import HEF, HAILO, VDevice`  | Direct import used at top of `hailo_engine.py`; missing → engine falls back to MOCK mode    |
+
+Verification binary (installed as part of `hailort`):
+```bash
+hailortcli scan     # confirms Hailo-8L on PCIe bus
+hailortcli fw-control identify   # prints FW version, serial, architecture (hailo8l)
+```
+
+---
+
+### 4.7 Edge Node — Python Packages (pip)
+
+All pinned minimums from [edge_node/requirements.txt](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/edge_node/requirements.txt). Install in a venv on the Pi (§B1 step 4) with:
+```bash
+cd edge_node
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+| Group                        | PyPI package               | Min pin         | Used in module                                                               |
+| ---------------------------- | -------------------------- | --------------- | ---------------------------------------------------------------------------- |
+| **Always required**          | `PyYAML`                   | `>=6.0`         | [config/\_\_init\_\_.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/edge_node/config/__init__.py) YAML loader |
+|                              | `numpy`                    | `>=1.24,<2`     | [hailo_engine.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/edge_node/ai/hailo_engine.py) postprocess, mock depth math, mask resize |
+|                              | `Pillow`                   | `>=10.0`        | [camera.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/edge_node/capture/camera.py) mock frame gen + EXIF injection; JPEG re-encode |
+|                              | `httpx`                    | `>=0.25`        | [upload_client.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/edge_node/pipeline/upload_client.py) HTTP session, 3-phase upload, retry |
+| *(Optional, image)*          | `opencv-python-headless`   | `>=4.8`         | ⬜ Bilinear mask/depth resizing with HDR-aware `INTER_CUBIC`; Pillow fallback exists if missing |
+| *(System only, not pip)*     | `Picamera2`                | —               | Installed via apt `python3-picamera2` in §4.5 — not a wheel. `import picamera2` fails on non-Pi → camera mock kicks in |
+| *(System only, not pip)*     | `hailo_platform`           | —               | Installed via apt `hailort-py` in §4.6 — not a PyPI wheel. Import fails → AI mock kicks in |
+| *(Optional, dev)*            | `pytest` / `ruff`          | `>=7.0` / `>=0.1` | ⬜ Commented lines in requirements.txt; unit tests + lint                      |
+
+**Mock mode behavior summary** (automatic, no flags):
+| Hardware / dep missing         | Fallback used                                                                               |
+| ------------------------------ | ------------------------------------------------------------------------------------------- |
+| `picamera2` not importable     | `CameraCapture` → synthetic gradient + pattern frames, valid EXIF (focal-length / F-number) |
+| `hailo_platform` not importable| `HailoInferenceEngine` → ellipse foreground mask + radial depth map                         |
+| `opencv-python-headless` missing | Mask/depth resize via `Pillow.Image.resize` Lanczos 3                                     |
+
+---
+
+### 4.8 Local Dev Mock Mode (no hardware)
+
+On a Windows/Mac/Linux laptop that is **not** a Raspberry Pi and has no Hailo hardware, the minimum install set collapses to **just 4 PyPI packages** per subsystem. Docker is optional.
+
+| Subsystem     | What you install (minimal)                                                                   | Notes                                                                         |
+| ------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Backend       | `cd backend && pip install -r requirements.txt`                                              | Runs MinIO→FS fallback, Redis→JSON fallback, Celery→inline thread fallback   |
+| Edge Node     | `cd edge_node && pip install -r requirements.txt`                                            | Camera→mock RGB, Hailo→mock mask/depth. Uploads to real backend URL.         |
+| *(shortcut)*  | Install both venvs side-by-side and run §C E2E smoke test directly on your laptop            | Full pipeline runs in <10 s with mock outputs.                                |
+
 
 ---
 
