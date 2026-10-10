@@ -2,6 +2,10 @@
 
 The browser-based web UI for the **SnakeBot 3D Scanning System**. Built with React + Vite + TypeScript and React Three Fiber for in-browser WebGL rendering of reconstructed 3D assets.
 
+## How It Works
+
+At a high level, the SnakeBot frontend is a dashboard-driven client that talks to a FastAPI backend over HTTP. The edge device (Raspberry Pi + Hailo-8L) captures RGB, segmentation mask, and depth frames, then uploads them in a 3-phase protocol (`POST /bundles/init` → `PUT /bundles/{bid}/shots/*` → `POST /bundles/{bid}/finalize` with a SHA-256 manifest). Finalizing a bundle spawns a 9-stage photogrammetry pipeline (COLMAP sparse+dense → OpenMVS fusion → mesh post-process → PLY/GLB export), whose progress the frontend watches by polling `GET /jobs/{job_id}` every 2s (backing off on error). Completed jobs expose signed 302 redirects to the GLB and PLY files via the ObjectStore (MinIO or a local-FS fallback), which React Three Fiber streams directly into a WebGL canvas with OrbitControls, auto-framing camera rig, PLY/GLB format toggle, auto-rotate, grid, and contact shadows. Job IDs the user has looked up are persisted in `localStorage` so the Dashboard and Asset Library survive refreshes, even though the backend does not yet expose a `GET /jobs` list endpoint.
+
 ---
 
 ## Stack
