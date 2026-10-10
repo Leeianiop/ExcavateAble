@@ -5,7 +5,7 @@
 1. [Project Overview](#1-project-overview)
 2. [System Architecture](#2-system-architecture)
 3. [Hardware Requirements](#3-hardware-requirements)
-4. [Software & Package Requirements](#4-software--package-requirements)
+4. [Software &amp; Package Requirements](#4-software--package-requirements)
    - [4.1 Backend Host — Container Runtime](#41-backend-host--container-runtime)
    - [4.2 Backend — System Packages (apt / image layer)](#42-backend--system-packages-apt--image-layer)
    - [4.3 Backend — Python Packages (pip)](#43-backend--python-packages-pip)
@@ -24,7 +24,7 @@
    - [B3 — Local Dev Mock Mode (no hardware)](#b3--local-dev-mock-mode-no-hardware)
 7. [Part C — End-to-End Smoke Test](#7-part-c--end-to-end-smoke-test)
 8. [Part D — Configuration Reference](#8-part-d--configuration-reference)
-9. [Default URLs & Credentials](#9-default-urls--credentials)
+9. [Default URLs &amp; Credentials](#9-default-urls--credentials)
 10. [Troubleshooting](#10-troubleshooting)
 11. [Project Layout](#11-project-layout)
 12. [Next Steps (P4–P6)](#12-next-steps-p4p6)
@@ -35,13 +35,14 @@
 
 A photogrammetry-based 3D scanning pipeline split across two tiers:
 
-| Tier          | Runs on                         | Job                                                                                  |
-| ------------- | ------------------------------- | ------------------------------------------------------------------------------------ |
-| **Edge Node** | Raspberry Pi 5 8GB + Hailo-8L   | Captures 20–200 photos, runs realtime background segmentation + depth estimation, uploads a structured bundle. |
-| **Backend**   | Any Linux/Windows/Mac host (Docker) | Validates the bundle, runs COLMAP SfM → OpenMVS densification → mesh post-processing, serves `.ply` + `.glb` via a REST API. |
-| **Viewer**    | Browser (P4, deliverable next)  | Renders the GLB/PLY in WebGL (Three.js / React Three Fiber) with measurement tools.  |
+| Tier                | Runs on                             | Job                                                                                                                               |
+| ------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **Edge Node** | Raspberry Pi 5 8GB + Hailo-8L       | Captures 20–200 photos, runs realtime background segmentation + depth estimation, uploads a structured bundle.                   |
+| **Backend**   | Any Linux/Windows/Mac host (Docker) | Validates the bundle, runs COLMAP SfM → OpenMVS densification → mesh post-processing, serves`.ply` + `.glb` via a REST API. |
+| **Viewer**    | Browser (P4, deliverable next)      | Renders the GLB/PLY in WebGL (Three.js / React Three Fiber) with measurement tools.                                               |
 
 All four mandated project objectives are wired together:
+
 1. ✅ Edge node photographs targets (real camera or mock)
 2. ✅ Hailo-8L runs segmentation + depth (real Hailo or mock)
 3. ✅ Backend produces `.PLY` + `.GLB` (real COLMAP/OpenMVS or mock)
@@ -107,18 +108,19 @@ Every component has a **graceful mock fallback**, meaning you can exercise the f
 
 ### 3.1 Edge Node (Production)
 
-| Component                | Spec / Model                              | Notes                                         |
-| ------------------------ | ----------------------------------------- | --------------------------------------------- |
-| SBC                      | **Raspberry Pi 5 8GB**                    | 4GB works; 8GB recommended for Hailo DMA bufs |
-| Camera                   | **Raspberry Pi Camera Module v3** (12MP)  | Works with Module 2/3/HQ; 4056×3040 default   |
-| AI Accelerator           | **Hailo-8L AI HAT** (13 TOPS)             | PCIe HAT form factor                          |
-| Storage                  | ≥ 64 GB microSD (A2 rated)                | Store raw captures locally                    |
-| Power                    | 5V/5A USB-C PD or official Pi 5 PSU       | Hailo-8L draws ~6–8W peak extra               |
-| Network                  | Gigabit Ethernet or 5GHz Wi-Fi            | Uploads ~500 MB–3 GB per session              |
+| Component      | Spec / Model                                   | Notes                                         |
+| -------------- | ---------------------------------------------- | --------------------------------------------- |
+| SBC            | **Raspberry Pi 5 8GB**                   | 4GB works; 8GB recommended for Hailo DMA bufs |
+| Camera         | **Raspberry Pi Camera Module v3** (12MP) | Works with Module 2/3/HQ; 4056×3040 default  |
+| AI Accelerator | **Hailo-8L AI HAT** (13 TOPS)            | PCIe HAT form factor                          |
+| Storage        | ≥ 64 GB microSD (A2 rated)                    | Store raw captures locally                    |
+| Power          | 5V/5A USB-C PD or official Pi 5 PSU            | Hailo-8L draws ~6–8W peak extra              |
+| Network        | Gigabit Ethernet or 5GHz Wi-Fi                 | Uploads ~500 MB–3 GB per session             |
 
 ### 3.2 Backend Host (Docker)
 
 Any x86_64 / ARM64 machine with Docker ≥ 24:
+
 - **CPU**: 4+ cores (reconstruction is multi-threaded)
 - **RAM**: ≥ 16 GB (32 GB for dense OpenMVS on 200+ photos)
 - **Disk**: ≥ 50 GB free (MinIO + intermediate COLMAP files)
@@ -129,6 +131,7 @@ Any x86_64 / ARM64 machine with Docker ≥ 24:
 ## 4. Software & Package Requirements
 
 Every package below is listed **verbatim** from the project's manifest files:
+
 - Backend pip: [backend/requirements.txt](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/requirements.txt)
 - Backend system apt layer: [backend/Dockerfile](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/Dockerfile#L19-L23)
 - Edge node pip: [edge_node/requirements.txt](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/edge_node/requirements.txt)
@@ -142,22 +145,23 @@ Where a package is marked **(optional)**, the subsystem has a graceful mock/fall
 
 The project has **two code folders → two physical machines**. This table answers, for *every* package group, **which machine you run the install commands on**:
 
-| Package group / folder                 | Install on 🖥️ **Machine A — Backend Host** (your Windows/macOS/Linux laptop, desktop, or server, x86_64 or ARM64, 16+ GB RAM preferred) | Install on 🍓 **Machine B — Raspberry Pi 5** (the Pi 5 8GB with camera + Hailo-8L HAT) |
-| -------------------------------------- | :-------: | :-------: |
-| `SnakeBot/backend/` folder + Docker    | ✅ **YES** — `cd backend` lives here, `docker compose up` runs here | ❌ NO — (only backend mock mode *can* run here for CI, never real COLMAP/OpenMVS) |
-| `SnakeBot/edge_node/` folder           | ✅ *Optional* — for local mock dev on laptop (§4.8) | ✅ **YES** — this is where the camera/Hailo physically live |
-| Docker Desktop / Docker Engine         | ✅ **YES** — on the backend host                     | ❌ NO — (technically installable, but COLMAP image will OOM on 8 GB) |
-| Docker compose stack (redis, minio, api, worker) | ✅ **YES** — `docker compose up --build -d` runs here | ❌ NO                                  |
-| **COLMAP** (§4.4 — dense recon)       | ✅ **YES** — only on this machine. See 3 install paths in §4.4. | ❌ **DO NOT INSTALL ON PI 5.** §4.4 warning explains: ≥14 GB RAM usage + OOM + 10–30× slowdown + thermal throttle. |
-| **OpenMVS** (§4.4 — texturing)        | ✅ **YES** — only on this machine. Build-from-source script in §4.4. | ❌ **DO NOT INSTALL ON PI 5.** Same OOM/thermal issues, takes hours vs minutes on x86/CUDA. |
-| `trimesh` / `open3d` (§4.3, optional 3D pip) | ✅ **YES** — backend worker pip install, used in decimation + GLB fallback | ❌ NO — not used on the edge; edge only *captures* and *uploads*, never decimates meshes. |
-| Backend Python pip deps (§4.3: fastapi / celery / redis / minio / …) | ✅ **YES** — if running §A2 local venv (no Docker). Auto-installed inside container if using Docker path. | ❌ NO — backend doesn't run on Pi (unless mock smoke-test only). |
-| Backend apt layer (§4.2: curl/ca-certificates/libgomp1) | ✅ **YES** — if §A2 no-Docker. Auto-in Dockerfile. | ❌ NO                                  |
-| **Picamera2** (apt: `python3-picamera2`) | ❌ NO — laptop cameras aren't wired to libcamera HAL. | ✅ **YES** — this is the Pi camera driver, lives only here. |
-| **HailoRT SDK** (§4.6, apt: `hailort` + `hailort-py`) | ❌ NO — no Hailo hardware inside a normal laptop/desktop. | ✅ **YES** — only on the Pi 5 with the Hailo-8L HAT physically installed. |
-| Edge Node Python pip deps (§4.7: PyYAML / numpy / Pillow / httpx / opencv-python-headless) | ✅ *Optional* — for §B3 mock dev on laptop. | ✅ **YES** — install into the `.venv` on the Pi 5. |
+| Package group / folder                                                                      | Install on 🖥️**Machine A — Backend Host** (your Windows/macOS/Linux laptop, desktop, or server, x86_64 or ARM64, 16+ GB RAM preferred) |                Install on 🍓**Machine B — Raspberry Pi 5** (the Pi 5 8GB with camera + Hailo-8L HAT)                |
+| ------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------: | :-------------------------------------------------------------------------------------------------------------------------: |
+| `SnakeBot/backend/` folder + Docker                                                       |                                  ✅**YES** — `cd backend` lives here, `docker compose up` runs here                                  |                     ❌ NO — (only backend mock mode*can* run here for CI, never real COLMAP/OpenMVS)                     |
+| `SnakeBot/edge_node/` folder                                                              |                                             ✅*Optional* — for local mock dev on laptop (§4.8)                                             |                              ✅**YES** — this is where the camera/Hailo physically live                              |
+| Docker Desktop / Docker Engine                                                              |                                                     ✅**YES** — on the backend host                                                     |                            ❌ NO — (technically installable, but COLMAP image will OOM on 8 GB)                            |
+| Docker compose stack (redis, minio, api, worker)                                            |                                          ✅**YES** — `docker compose up --build -d` runs here                                          |                                                            ❌ NO                                                            |
+| **COLMAP** (§4.4 — dense recon)                                                     |                                     ✅**YES** — only on this machine. See 3 install paths in §4.4.                                     | ❌**DO NOT INSTALL ON PI 5.** §4.4 warning explains: ≥14 GB RAM usage + OOM + 10–30× slowdown + thermal throttle. |
+| **OpenMVS** (§4.4 — texturing)                                                      |                                   ✅**YES** — only on this machine. Build-from-source script in §4.4.                                   |              ❌**DO NOT INSTALL ON PI 5.** Same OOM/thermal issues, takes hours vs minutes on x86/CUDA.              |
+| `trimesh` / `open3d` (§4.3, optional 3D pip)                                           |                                ✅**YES** — backend worker pip install, used in decimation + GLB fallback                                |                ❌ NO — not used on the edge; edge only*captures* and *uploads*, never decimates meshes.                |
+| Backend Python pip deps (§4.3: fastapi / celery / redis / minio / …)                      |                ✅**YES** — if running §A2 local venv (no Docker). Auto-installed inside container if using Docker path.                |                              ❌ NO — backend doesn't run on Pi (unless mock smoke-test only).                              |
+| Backend apt layer (§4.2: curl/ca-certificates/libgomp1)                                    |                                            ✅**YES** — if §A2 no-Docker. Auto-in Dockerfile.                                            |                                                            ❌ NO                                                            |
+| **Picamera2** (apt: `python3-picamera2`)                                            |                                             ❌ NO — laptop cameras aren't wired to libcamera HAL.                                             |                              ✅**YES** — this is the Pi camera driver, lives only here.                              |
+| **HailoRT SDK** (§4.6, apt: `hailort` + `hailort-py`)                            |                                           ❌ NO — no Hailo hardware inside a normal laptop/desktop.                                           |                       ✅**YES** — only on the Pi 5 with the Hailo-8L HAT physically installed.                       |
+| Edge Node Python pip deps (§4.7: PyYAML / numpy / Pillow / httpx / opencv-python-headless) |                                                 ✅*Optional* — for §B3 mock dev on laptop.                                                 |                                 ✅**YES** — install into the `.venv` on the Pi 5.                                 |
 
 **TL;DR folder → machine rule of thumb:**
+
 - **`backend/` directory + COLMAP + OpenMVS + trimesh/open3d** → live on **your big computer (laptop/desktop/server)**. This is CPU/RAM/GPU-heavy work.
 - **`edge_node/` directory + Picamera2 apt + HailoRT apt** → live on **the Raspberry Pi 5**. This is hardware-capture + Hailo-accelerated AI, then upload. That's it.
 - You **can** also `git clone` the entire `SnakeBot/` repo onto *both* machines if you want; just follow the install commands for *that machine's* section.
@@ -169,6 +173,7 @@ The project has **two code folders → two physical machines**. This table answe
 Pick the sheet that matches the machine you are physically sitting at.
 
 **🖥️ Machine A — Backend Host (your laptop / desktop / server):**
+
 ```bash
 # ------------------------------------------------------------------
 # Step 0 (if Windows): enable WSL2 first, then open an Ubuntu shell
@@ -209,6 +214,7 @@ curl http://localhost:8000/api/v1/health
 ```
 
 **🍓 Machine B — Raspberry Pi 5 (ssh into it, Hailo-8L + camera physically installed):**
+
 ```bash
 # 1. OS flash + boot: Raspberry Pi Imager → Bookworm Lite 64-bit, SSH on, Wi-Fi on
 #    Then from your laptop:
@@ -255,6 +261,7 @@ python -m edge_node health-check
 ```
 
 That's the full two-machine install flow. Once both check out, run the §7 E2E smoke test from the Pi 5:
+
 ```bash
 cd ~/SnakeBot/edge_node
 source .venv/bin/activate
@@ -267,10 +274,10 @@ python -m edge_node capture-and-upload --shots 20 --interval 1.5 --wait
 
 These are the **only** packages you need to install manually on the host if you use the Docker path (recommended). Python, Redis, MinIO, FastAPI, and the worker run entirely inside containers.
 
-| Tool                 | Min Version | Where / how to install                              | Required? |
-| -------------------- | ----------- | ---------------------------------------------------- | --------- |
-| Docker Engine        | 24.0        | https://docs.docker.com/engine/install/              | ✅ Yes    |
-| Docker Compose (v2)  | plugin v2   | Included with Docker Desktop / Engine 24+            | ✅ Yes    |
+| Tool                | Min Version | Where / how to install                    | Required? |
+| ------------------- | ----------- | ----------------------------------------- | --------- |
+| Docker Engine       | 24.0        | https://docs.docker.com/engine/install/   | ✅ Yes    |
+| Docker Compose (v2) | plugin v2   | Included with Docker Desktop / Engine 24+ | ✅ Yes    |
 
 ---
 
@@ -278,19 +285,21 @@ These are the **only** packages you need to install manually on the host if you 
 
 Installed automatically inside the [backend/Dockerfile](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/Dockerfile#L19-L23) `apt-get install` step. Listed here if you are running backend locally without Docker (§A2):
 
-| Apt package       | Pulled into image for —                                 | Required? |
-| ----------------- | ------------------------------------------------------- | --------- |
-| `curl`            | Healthcheck probes, CLI downloads                      | ✅ Yes    |
-| `ca-certificates` | TLS root store (for Hailo/MinIO HTTPS endpoints)       | ✅ Yes    |
-| `libgomp1`        | OpenMP runtime for numpy / OpenCV SIMD in worker       | ✅ Yes    |
+| Apt package         | Pulled into image for —                         | Required? |
+| ------------------- | ------------------------------------------------ | --------- |
+| `curl`            | Healthcheck probes, CLI downloads                | ✅ Yes    |
+| `ca-certificates` | TLS root store (for Hailo/MinIO HTTPS endpoints) | ✅ Yes    |
+| `libgomp1`        | OpenMP runtime for numpy / OpenCV SIMD in worker | ✅ Yes    |
 
 Install copy-paste (Debian/Ubuntu / Linux Mint / any deb-based backend host, outside Docker):
+
 ```bash
 sudo apt-get update && sudo apt-get install -y --no-install-recommends \
   curl \
   ca-certificates \
   libgomp1
 ```
+
 macOS / Windows host users: skip this section entirely — use the Docker path (§A1) or a WSL2 Ubuntu VM.
 
 Base image the Dockerfile uses: **`python:3.11-slim-bookworm`** (Debian 12, Python 3.11.x). If running backend outside Docker, use a matching **Python 3.11** interpreter.
@@ -301,28 +310,29 @@ Base image the Dockerfile uses: **`python:3.11-slim-bookworm`** (Debian 12, Pyth
 
 All pinned minimums are from [backend/requirements.txt](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/requirements.txt). Install inside container (automatic) or in a venv for §A2 local dev with `pip install -r backend/requirements.txt`.
 
-| Group                   | PyPI package               | Min pin         | Used in file(s)                                                                 |
-| ----------------------- | -------------------------- | --------------- | ------------------------------------------------------------------------------- |
-| **API / web framework** | `fastapi`                  | `>=0.105`       | [main.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/app/main.py) |
-|                         | `uvicorn[standard]`        | `>=0.24`        | Dockerfile CMD, compose `command:` blocks                                        |
-|                         | `pydantic`                 | `>=2.5`         | [schemas.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/app/schemas.py) response models |
-|                         | `pydantic-settings`        | `>=2.1`         | [config.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/app/config.py) `.env` loader |
-| **Queue / storage**     | `celery`                   | `>=5.3`         | [tasks.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/app/workers/tasks.py) async recon jobs |
-|                         | `redis`                    | `>=5.0`         | Celery broker + result backend, job cache                                       |
-|                         | `minio`                    | `>=7.2`         | [object_store.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/app/storage/object_store.py) S3-compatible PUT/presign |
-|                         | `httpx`                    | `>=0.25`        | Object-store S3 presign fallback calls, health probes                          |
-| **Data / image**        | `numpy`                    | `>=1.24,<2`     | [reconstruction.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/app/workers/reconstruction.py) mock PLY vertex math |
-|                         | `Pillow`                   | `>=10.0`        | Texture atlas generation, image re-encoding during background-strip            |
-|                         | `PyYAML`                   | `>=6.0`         | Debug config dump, manifest validation                                          |
-| **(Optional) 3D libs**  | `trimesh`                  | `>=4.0`         | ⬜ PLY quadric decimation + GLB export fallback if no OpenMVS TextureMesh      |
-|                         | `open3d`                   | `>=0.18`        | ⬜ Mesh cleaning / poisson / watertight post-processing (CPU or CUDA build)     |
-| **(Optional) dev**      | `pytest`                   | `>=7.0`         | ⬜ Unit / E2E test runner                                                        |
-|                         | `ruff`                     | `>=0.1`         | ⬜ Lint + import ordering + style                                                |
-| *(implicit, FastAPI)*   | `python-multipart`         | `>=0.0.6`       | UploadFile body parser for `/bundles/{bid}/shots/{sid}/{role}` PUT route         |
+| Group                         | PyPI package          | Min pin       | Used in file(s)                                                                                                                  |
+| ----------------------------- | --------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| **API / web framework** | `fastapi`           | `>=0.105`   | [main.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/app/main.py)                                                   |
+|                               | `uvicorn[standard]` | `>=0.24`    | Dockerfile CMD, compose`command:` blocks                                                                                       |
+|                               | `pydantic`          | `>=2.5`     | [schemas.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/app/schemas.py) response models                             |
+|                               | `pydantic-settings` | `>=2.1`     | [config.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/app/config.py) `.env` loader                               |
+| **Queue / storage**     | `celery`            | `>=5.3`     | [tasks.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/app/workers/tasks.py) async recon jobs                        |
+|                               | `redis`             | `>=5.0`     | Celery broker + result backend, job cache                                                                                        |
+|                               | `minio`             | `>=7.2`     | [object_store.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/app/storage/object_store.py) S3-compatible PUT/presign |
+|                               | `httpx`             | `>=0.25`    | Object-store S3 presign fallback calls, health probes                                                                            |
+| **Data / image**        | `numpy`             | `>=1.24,<2` | [reconstruction.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/app/workers/reconstruction.py) mock PLY vertex math  |
+|                               | `Pillow`            | `>=10.0`    | Texture atlas generation, image re-encoding during background-strip                                                              |
+|                               | `PyYAML`            | `>=6.0`     | Debug config dump, manifest validation                                                                                           |
+| **(Optional) 3D libs**  | `trimesh`           | `>=4.0`     | ⬜ PLY quadric decimation + GLB export fallback if no OpenMVS TextureMesh                                                        |
+|                               | `open3d`            | `>=0.18`    | ⬜ Mesh cleaning / poisson / watertight post-processing (CPU or CUDA build)                                                      |
+| **(Optional) dev**      | `pytest`            | `>=7.0`     | ⬜ Unit / E2E test runner                                                                                                        |
+|                               | `ruff`              | `>=0.1`     | ⬜ Lint + import ordering + style                                                                                                |
+| *(implicit, FastAPI)*       | `python-multipart`  | `>=0.0.6`   | UploadFile body parser for`/bundles/{bid}/shots/{sid}/{role}` PUT route                                                        |
 
 Install **only required** packages (the default `requirements.txt` is already trimmed this way — 3D + dev lines are commented out).
 
 One-line installs:
+
 ```bash
 # --- Required packages (already in requirements.txt) ---
 cd backend
@@ -354,11 +364,11 @@ pip install "pytest>=7.0" "ruff>=0.1"
 
 The default Docker image runs a pure-Python mock PLY/GLB writer so you can exercise the upload → job → asset pipeline today. For **real photogrammetry**, add the system binaries below and point `COLMAP_BIN` / `OPENMVS_DIR` at them via [.env](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/.env.example#L30-L33):
 
-| Binary / suite    | Min version | Where to get it                                                    | Used in stage(s) — [reconstruction.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/app/workers/reconstruction.py) |
-| ----------------- | ----------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| **COLMAP**        | 3.8+        | https://colmap.github.io/install.html (apt for Debian: `colmap` or CUDA build from `nvidia/cuda:11.8.0-devel-ubuntu22.04`) | Stage 3 — feature_extractor, exhaustive_matcher, mapper; Stage 4 — image_undistorter, patch_match_stereo, stereo_fusion |
-| **OpenMVS**       | 2.2+        | Build from source with CUDA: https://github.com/cdcseacave/openMVS  (binary dir typically `/usr/local/bin/OpenMVS`) | Stage 5 — InterfaceCOLMAP, DensifyPointCloud, ReconstructMesh, RefineMesh, TextureMesh |
-| trimesh / open3d  | §4.3 above  | `pip install trimesh open3d` (see §4.3 install block)             | Stage 6 — decimation + cleaning fallback if OpenMVS RefineMesh skipped; Stage 7/8 — alternative PLY/GLB writer            |
+| Binary / suite    | Min version | Where to get it                                                                                                               | Used in stage(s) —[reconstruction.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/app/workers/reconstruction.py) |
+| ----------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| **COLMAP**  | 3.8+        | https://colmap.github.io/install.html (apt for Debian:`colmap` or CUDA build from `nvidia/cuda:11.8.0-devel-ubuntu22.04`) | Stage 3 — feature_extractor, exhaustive_matcher, mapper; Stage 4 — image_undistorter, patch_match_stereo, stereo_fusion     |
+| **OpenMVS** | 2.2+        | Build from source with CUDA: https://github.com/cdcseacave/openMVS  (binary dir typically`/usr/local/bin/OpenMVS`)          | Stage 5 — InterfaceCOLMAP, DensifyPointCloud, ReconstructMesh, RefineMesh, TextureMesh                                       |
+| trimesh / open3d  | §4.3 above | `pip install trimesh open3d` (see §4.3 install block)                                                                      | Stage 6 — decimation + cleaning fallback if OpenMVS RefineMesh skipped; Stage 7/8 — alternative PLY/GLB writer              |
 
 ---
 
@@ -367,6 +377,7 @@ The default Docker image runs a pure-Python mock PLY/GLB writer so you can exerc
 Run **on the backend host** (x86_64 laptop/server), NOT on the Pi 5.
 
 **Option 1 — Debian/Ubuntu apt (fastest, CPU-only, colmap 3.8 in testing/sid or bookworm-backports):**
+
 ```bash
 # Debian 12 Bookworm: enable bookworm-backports first
 echo "deb http://deb.debian.org/debian bookworm-backports main contrib non-free non-free-firmware" \
@@ -383,6 +394,7 @@ which colmap       # -> /usr/bin/colmap (set COLMAP_BIN=colmap in .env)
 ```
 
 **Option 2 — conda-forge (cross-platform, macOS/Linux/Windows x64, latest):**
+
 ```bash
 conda install -c conda-forge colmap
 # or
@@ -393,6 +405,7 @@ conda run colmap -h
 
 **Option 3 — CUDA-accelerated Docker build (recommended for ≥ 100 photo sessions, NVIDIA GPU only):**
 Save as `backend/Dockerfile.cuda` next to the existing non-CUDA Dockerfile:
+
 ```dockerfile
 # backend/Dockerfile.cuda  —  real photogrammetry build (~8 GB image)
 FROM nvidia/cuda:11.8.0-devel-ubuntu22.04 AS base
@@ -427,6 +440,7 @@ ENV COLMAP_BIN=colmap OPENMVS_DIR=/usr/local/bin/OpenMVS
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
+
 Then edit `backend/docker-compose.yml`: change `api.build.dockerfile` and `worker.build.dockerfile` from `Dockerfile` to `Dockerfile.cuda`, and add `runtime: nvidia` + device request under `worker`. Verify GPU with `docker run --rm --gpus all <image> colmap -h`.
 
 ---
@@ -464,10 +478,10 @@ ls /usr/local/bin/OpenMVS
 ```
 
 Fallback chain (what runs if each level is missing):
+
 - COLMAP missing → Stage 3/4 no-op, pass through image list → Stage 5 no-op
 - OpenMVS missing → Stage 5 no-op
 - Both missing → **Stage 9 mock pipeline**: pure-Python/numpy cylinder mesh + ASCII PLY writer + PIL texture atlas → valid `scan.ply` + `scan.glb`
-
 
 ---
 
@@ -490,13 +504,13 @@ sudo apt install -y \
 sudo reboot
 ```
 
-| Apt package             | Purpose                                                                      | Required? |
-| ----------------------- | ---------------------------------------------------------------------------- | --------- |
-| `python3-picamera2`     | Official libcamera Python bindings for the Pi Camera Module (not on PyPI)    | ✅ Yes    |
-| `python3-libcamera`    | Low-level libcamera + sensor tuning shared libs                              | ✅ Yes (dep of picamera2) |
-| `python3-pip`           | Pulls in pip for `python3 -m pip install …` in the venv                      | ✅ Yes    |
-| `python3-venv`          | `python3 -m venv .venv` isolated env (needed because Bookworm PEP-668)       | ✅ Yes    |
-| `git`                   | Clone the project (or use `scp` / USB transfer instead)                      | ✅ Yes    |
+| Apt package           | Purpose                                                                   | Required?                 |
+| --------------------- | ------------------------------------------------------------------------- | ------------------------- |
+| `python3-picamera2` | Official libcamera Python bindings for the Pi Camera Module (not on PyPI) | ✅ Yes                    |
+| `python3-libcamera` | Low-level libcamera + sensor tuning shared libs                           | ✅ Yes (dep of picamera2) |
+| `python3-pip`       | Pulls in pip for`python3 -m pip install …` in the venv                 | ✅ Yes                    |
+| `python3-venv`      | `python3 -m venv .venv` isolated env (needed because Bookworm PEP-668)  | ✅ Yes                    |
+| `git`               | Clone the project (or use`scp` / USB transfer instead)                  | ✅ Yes                    |
 
 ---
 
@@ -514,12 +528,13 @@ sudo apt update
 sudo apt install -y hailort hailort-py
 ```
 
-| Hailo apt package    | Files it installs                                                                      | Used in module: [edge_node/ai/hailo_engine.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/edge_node/ai/hailo_engine.py) |
-| -------------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `hailort`            | `/usr/bin/hailortcli`, `libhailort.so*`, Hailo PCIe kernel driver + udev rules         | Device probe, InferVStreams runtime, .hef loader                                            |
-| `hailort-py`         | `hailo_platform` Python 3.11 wheel → `from hailo_platform import HEF, HAILO, VDevice`  | Direct import used at top of `hailo_engine.py`; missing → engine falls back to MOCK mode    |
+| Hailo apt package | Files it installs                                                                          | Used in module:[edge_node/ai/hailo_engine.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/edge_node/ai/hailo_engine.py) |
+| ----------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `hailort`       | `/usr/bin/hailortcli`, `libhailort.so*`, Hailo PCIe kernel driver + udev rules         | Device probe, InferVStreams runtime, .hef loader                                                                            |
+| `hailort-py`    | `hailo_platform` Python 3.11 wheel → `from hailo_platform import HEF, HAILO, VDevice` | Direct import used at top of`hailo_engine.py`; missing → engine falls back to MOCK mode                                  |
 
 Verification binary (installed as part of `hailort`):
+
 ```bash
 hailortcli scan     # confirms Hailo-8L on PCIe bus
 hailortcli fw-control identify   # prints FW version, serial, architecture (hailo8l)
@@ -530,6 +545,7 @@ hailortcli fw-control identify   # prints FW version, serial, architecture (hail
 ### 4.7 Edge Node — Python Packages (pip)
 
 All pinned minimums from [edge_node/requirements.txt](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/edge_node/requirements.txt). Install in a venv on the Pi (§B1 step 4) with:
+
 ```bash
 cd edge_node
 python3 -m venv .venv
@@ -537,23 +553,24 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-| Group                        | PyPI package               | Min pin         | Used in module                                                               |
-| ---------------------------- | -------------------------- | --------------- | ---------------------------------------------------------------------------- |
-| **Always required**          | `PyYAML`                   | `>=6.0`         | [config/\_\_init\_\_.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/edge_node/config/__init__.py) YAML loader |
-|                              | `numpy`                    | `>=1.24,<2`     | [hailo_engine.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/edge_node/ai/hailo_engine.py) postprocess, mock depth math, mask resize |
-|                              | `Pillow`                   | `>=10.0`        | [camera.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/edge_node/capture/camera.py) mock frame gen + EXIF injection; JPEG re-encode |
-|                              | `httpx`                    | `>=0.25`        | [upload_client.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/edge_node/pipeline/upload_client.py) HTTP session, 3-phase upload, retry |
-| *(Optional, image)*          | `opencv-python-headless`   | `>=4.8`         | ⬜ Bilinear mask/depth resizing with HDR-aware `INTER_CUBIC`; Pillow fallback exists if missing |
-| *(System only, not pip)*     | `Picamera2`                | —               | Installed via apt `python3-picamera2` in §4.5 — not a wheel. `import picamera2` fails on non-Pi → camera mock kicks in |
-| *(System only, not pip)*     | `hailo_platform`           | —               | Installed via apt `hailort-py` in §4.6 — not a PyPI wheel. Import fails → AI mock kicks in |
-| *(Optional, dev)*            | `pytest` / `ruff`          | `>=7.0` / `>=0.1` | ⬜ Commented lines in requirements.txt; unit tests + lint                      |
+| Group                      | PyPI package               | Min pin               | Used in module                                                                                                                              |
+| -------------------------- | -------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Always required**  | `PyYAML`                 | `>=6.0`             | [config/\_\_init\_\_.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/edge_node/config/__init__.py) YAML loader                          |
+|                            | `numpy`                  | `>=1.24,<2`         | [hailo_engine.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/edge_node/ai/hailo_engine.py) postprocess, mock depth math, mask resize   |
+|                            | `Pillow`                 | `>=10.0`            | [camera.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/edge_node/capture/camera.py) mock frame gen + EXIF injection; JPEG re-encode    |
+|                            | `httpx`                  | `>=0.25`            | [upload_client.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/edge_node/pipeline/upload_client.py) HTTP session, 3-phase upload, retry |
+| *(Optional, image)*      | `opencv-python-headless` | `>=4.8`             | ⬜ Bilinear mask/depth resizing with HDR-aware`INTER_CUBIC`; Pillow fallback exists if missing                                            |
+| *(System only, not pip)* | `Picamera2`              | —                    | Installed via apt`python3-picamera2` in §4.5 — not a wheel. `import picamera2` fails on non-Pi → camera mock kicks in                |
+| *(System only, not pip)* | `hailo_platform`         | —                    | Installed via apt`hailort-py` in §4.6 — not a PyPI wheel. Import fails → AI mock kicks in                                              |
+| *(Optional, dev)*        | `pytest` / `ruff`      | `>=7.0` / `>=0.1` | ⬜ Commented lines in requirements.txt; unit tests + lint                                                                                   |
 
 **Mock mode behavior summary** (automatic, no flags):
-| Hardware / dep missing         | Fallback used                                                                               |
-| ------------------------------ | ------------------------------------------------------------------------------------------- |
-| `picamera2` not importable     | `CameraCapture` → synthetic gradient + pattern frames, valid EXIF (focal-length / F-number) |
-| `hailo_platform` not importable| `HailoInferenceEngine` → ellipse foreground mask + radial depth map                         |
-| `opencv-python-headless` missing | Mask/depth resize via `Pillow.Image.resize` Lanczos 3                                     |
+
+| Hardware / dep missing             | Fallback used                                                                                  |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `picamera2` not importable       | `CameraCapture` → synthetic gradient + pattern frames, valid EXIF (focal-length / F-number) |
+| `hailo_platform` not importable  | `HailoInferenceEngine` → ellipse foreground mask + radial depth map                         |
+| `opencv-python-headless` missing | Mask/depth resize via`Pillow.Image.resize` Lanczos 3                                         |
 
 ---
 
@@ -561,12 +578,11 @@ pip install -r requirements.txt
 
 On a Windows/Mac/Linux laptop that is **not** a Raspberry Pi and has no Hailo hardware, the minimum install set collapses to **just 4 PyPI packages** per subsystem. Docker is optional.
 
-| Subsystem     | What you install (minimal)                                                                   | Notes                                                                         |
-| ------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Backend       | `cd backend && pip install -r requirements.txt`                                              | Runs MinIO→FS fallback, Redis→JSON fallback, Celery→inline thread fallback   |
-| Edge Node     | `cd edge_node && pip install -r requirements.txt`                                            | Camera→mock RGB, Hailo→mock mask/depth. Uploads to real backend URL.         |
-| *(shortcut)*  | Install both venvs side-by-side and run §C E2E smoke test directly on your laptop            | Full pipeline runs in <10 s with mock outputs.                                |
-
+| Subsystem      | What you install (minimal)                                                         | Notes                                                                         |
+| -------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Backend        | `cd backend && pip install -r requirements.txt`                                  | Runs MinIO→FS fallback, Redis→JSON fallback, Celery→inline thread fallback |
+| Edge Node      | `cd edge_node && pip install -r requirements.txt`                                | Camera→mock RGB, Hailo→mock mask/depth. Uploads to real backend URL.        |
+| *(shortcut)* | Install both venvs side-by-side and run §C E2E smoke test directly on your laptop | Full pipeline runs in <10 s with mock outputs.                                |
 
 ---
 
@@ -596,6 +612,7 @@ docker compose ps
 ```
 
 Services start in dependency order via compose `depends_on.condition: service_healthy`:
+
 1. Redis (queue + cache)
 2. MinIO (object storage)
 3. FastAPI API + Celery worker (wait for 1 + 2 healthy)
@@ -603,6 +620,7 @@ Services start in dependency order via compose `depends_on.condition: service_he
 ### A2 — Local Dev (no Docker)
 
 If you don't have Docker (e.g. restricted sandbox), you can still run the backend. It will automatically fall back to:
+
 - **File-based object store** (`./backend/data/tmp/minio_mock/`) instead of MinIO
 - **FS JSON job registry** instead of Redis
 - **Inline thread worker** instead of Celery
@@ -731,10 +749,10 @@ upload:
 
 The Hailo engine in [edge_node/ai/hailo_engine.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/edge_node/ai/hailo_engine.py#L1-L440) expects two **compiled `.hef`** binaries in `edge_node/models/`:
 
-| File            | Purpose                        | Source                                                     |
-| --------------- | ------------------------------ | ---------------------------------------------------------- |
-| `yolov8n-seg.hef` | Background / object segmentation | Hailo Model Zoo `data/download_hefs.py yolov8n-seg`        |
-| `dpt_lite.hef`  | Monocular depth estimation     | Hailo Model Zoo `data/download_hefs.py dpt_lite`           |
+| File                | Purpose                          | Source                                               |
+| ------------------- | -------------------------------- | ---------------------------------------------------- |
+| `yolov8n-seg.hef` | Background / object segmentation | Hailo Model Zoo`data/download_hefs.py yolov8n-seg` |
+| `dpt_lite.hef`    | Monocular depth estimation       | Hailo Model Zoo`data/download_hefs.py dpt_lite`    |
 
 Download them (run anywhere that has `git` + Python):
 
@@ -805,6 +823,7 @@ python -m edge_node capture-and-upload --shots 20 --interval 0.1 --wait
 ```
 
 What `--wait` does:
+
 1. Runs capture pipeline → 20 mock photos, masks, depths, manifest
 2. Calls `/bundles/init` → gets upload_id + job_id
 3. PUTs each shot's 5 files to `/bundles/{id}/shots/{sid}/{role}` with `X-Content-SHA256` ETag
@@ -844,49 +863,50 @@ Open `scan.glb` in any 3D viewer (Windows 3D Viewer, macOS Preview, Blender, htt
 
 ### 8.1 Edge Node YAML — [edge_node/config/config.yaml](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/edge_node/config/config.yaml#L1-L52)
 
-| Section  | Key                       | Default                 | What it does                                                  |
-| -------- | ------------------------- | ----------------------- | ------------------------------------------------------------- |
-| capture  | resolution.{width,height} | 4056 / 3040             | Pi Camera resolution (12 MP v3 full frame)                    |
-| capture  | num_shots                 | 20                      | Default shots per session (override with `--shots N`)        |
-| capture  | shot_interval_sec         | 1.5                     | Seconds between shutter actuations (for camera settle)       |
-| capture  | save_raw / save_jpeg      | true / true             | Keep RAW .dng pairs alongside JPEGs                           |
-| hailo    | segmentation_model_path   | ./models/yolov8n-seg.hef| Absolute/rel path to segmentation .hef                        |
-| hailo    | depth_model_path          | ./models/dpt_lite.hef   | Absolute/rel path to depth .hef                               |
-| upload   | backend_url               | http://localhost:8000   | **Change to your backend LAN IP/hostname if Pi ≠ backend.**  |
-| upload   | max_retries / retry_delay | 3 / 5s                  | Resilience to transient network blips                         |
-| storage  | local_dir                 | ./captures              | Where raw shots are kept before (and after) upload           |
-| storage  | keep_local_after_upload   | true                    | Set to false to save SD card space on the Pi                  |
+| Section | Key                       | Default                  | What it does                                                       |
+| ------- | ------------------------- | ------------------------ | ------------------------------------------------------------------ |
+| capture | resolution.{width,height} | 4056 / 3040              | Pi Camera resolution (12 MP v3 full frame)                         |
+| capture | num_shots                 | 20                       | Default shots per session (override with`--shots N`)             |
+| capture | shot_interval_sec         | 1.5                      | Seconds between shutter actuations (for camera settle)             |
+| capture | save_raw / save_jpeg      | true / true              | Keep RAW .dng pairs alongside JPEGs                                |
+| hailo   | segmentation_model_path   | ./models/yolov8n-seg.hef | Absolute/rel path to segmentation .hef                             |
+| hailo   | depth_model_path          | ./models/dpt_lite.hef    | Absolute/rel path to depth .hef                                    |
+| upload  | backend_url               | http://localhost:8000    | **Change to your backend LAN IP/hostname if Pi ≠ backend.** |
+| upload  | max_retries / retry_delay | 3 / 5s                   | Resilience to transient network blips                              |
+| storage | local_dir                 | ./captures               | Where raw shots are kept before (and after) upload                 |
+| storage | keep_local_after_upload   | true                     | Set to false to save SD card space on the Pi                       |
 
 ### 8.2 Backend Env — [backend/.env.example](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/.env.example#L1-L34)
 
 Copy to `.env`; only change these if you know you need to:
 
-| Var                         | Default                            | When to change                                              |
-| --------------------------- | ---------------------------------- | ----------------------------------------------------------- |
-| `DEBUG`                     | `true`                             | Set `false` in prod; disables stack traces                  |
-| `CORS_ORIGINS`              | `*`                                | Restrict to your viewer domain(s) in prod                   |
-| `REDIS_URL`                 | `redis://redis:6379/0`             | Point at an external Redis if scaling beyond 1 machine      |
-| `MINIO_ACCESS_KEY/SECRET`   | `minioadmin / minioadmin`          | Rotate for prod!                                            |
-| `WORKER_CONCURRENCY`        | `2`                                | Bump to `num CPU cores` on a dedicated recon server         |
-| `MAX_UPLOAD_SIZE_MB`        | `8192`                             | Raise if you shoot huge RAW sessions (>200 × 12 MP DNGs)   |
-| `COLMAP_BIN` / `OPENMVS_DIR`| `colmap` / `/usr/local/bin/OpenMVS`| Install real COLMAP/OpenMVS and point these for production  |
-| `PLY_DECIMATE_TARGET_RATIO` | `0.5`                              | `0.1` = more aggressive mesh decimation; `1.0` = keep all  |
-| `GLB_TEXTURE_SIZE`          | `4096`                             | 2048 on memory-constrained viewers; 8192 for high-quality   |
+| Var                              | Default                                 | When to change                                                |
+| -------------------------------- | --------------------------------------- | ------------------------------------------------------------- |
+| `DEBUG`                        | `true`                                | Set`false` in prod; disables stack traces                   |
+| `CORS_ORIGINS`                 | `*`                                   | Restrict to your viewer domain(s) in prod                     |
+| `REDIS_URL`                    | `redis://redis:6379/0`                | Point at an external Redis if scaling beyond 1 machine        |
+| `MINIO_ACCESS_KEY/SECRET`      | `minioadmin / minioadmin`             | Rotate for prod!                                              |
+| `WORKER_CONCURRENCY`           | `2`                                   | Bump to`num CPU cores` on a dedicated recon server          |
+| `MAX_UPLOAD_SIZE_MB`           | `8192`                                | Raise if you shoot huge RAW sessions (>200 × 12 MP DNGs)     |
+| `COLMAP_BIN` / `OPENMVS_DIR` | `colmap` / `/usr/local/bin/OpenMVS` | Install real COLMAP/OpenMVS and point these for production    |
+| `PLY_DECIMATE_TARGET_RATIO`    | `0.5`                                 | `0.1` = more aggressive mesh decimation; `1.0` = keep all |
+| `GLB_TEXTURE_SIZE`             | `4096`                                | 2048 on memory-constrained viewers; 8192 for high-quality     |
 
 ---
 
 ## 9. Default URLs & Credentials
 
-| Service             | URL                                              | User         | Password     |
-| ------------------- | ------------------------------------------------ | ------------ | ------------ |
-| FastAPI REST        | http://localhost:8000/api/v1                     | —            | —            |
-| Swagger / OpenAPI   | http://localhost:8000/docs                       | —            | —            |
-| MinIO S3 API        | http://localhost:9000                            | minioadmin   | minioadmin   |
-| MinIO Web Console   | http://localhost:9001                            | minioadmin   | minioadmin   |
-| Redis CLI           | `redis-cli -h localhost -p 6379`                 | —            | — (no auth)  |
-| Backend (default) in edge config | `http://localhost:8000`                | —            | —            |
+| Service                          | URL                                | User       | Password     |
+| -------------------------------- | ---------------------------------- | ---------- | ------------ |
+| FastAPI REST                     | http://localhost:8000/api/v1       | —         | —           |
+| Swagger / OpenAPI                | http://localhost:8000/docs         | —         | —           |
+| MinIO S3 API                     | http://localhost:9000              | minioadmin | minioadmin   |
+| MinIO Web Console                | http://localhost:9001              | minioadmin | minioadmin   |
+| Redis CLI                        | `redis-cli -h localhost -p 6379` | —         | — (no auth) |
+| Backend (default) in edge config | `http://localhost:8000`          | —         | —           |
 
 **Production hardening reminders**:
+
 - Rotate MinIO credentials (env vars + `.env` file)
 - Put a TLS-terminating reverse proxy (Nginx / Caddy / Cloudflare) in front of `:8000`
 - Enable Redis AUTH or use a managed Redis in cloud deployments
@@ -907,17 +927,21 @@ docker compose up -d
 ### E2 — Edge node `capture-and-upload` → `ConnectionRefused: localhost:8000`
 
 Confirm the backend container is `Up (healthy)`:
+
 ```bash
 docker compose ps
 ```
+
 If it's running on another machine, edit `edge_node/config/config.yaml → upload.backend_url` to the backend LAN IP and retry.
 
 ### E3 — Reconstruction job stuck in `pending` forever
 
 The Celery worker is dead or Redis was restarted. Check:
+
 ```bash
 docker compose logs worker --tail 200
 ```
+
 Most common cause: `MINIO_ACCESS_KEY/SECRET` mismatch between `.env` and the compose env override.
 
 ### E4 — Job completes but PLY is empty / zero vertices
@@ -982,6 +1006,7 @@ SnakeBot/
 ```
 
 Key protocol file pairs to read together if you're hacking on the upload/job flow:
+
 - [upload_client.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/edge_node/pipeline/upload_client.py#L1-L230) and [v1.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/app/api/v1.py#L1-L260) — HTTP call shapes are co-designed; every header and JSON key matches.
 - [reconstruction.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/app/workers/reconstruction.py#L1-L500) and [job_store.py](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/app/storage/job_store.py#L1-L215) — 9 stage-progress events + final asset stats.
 
@@ -990,19 +1015,23 @@ Key protocol file pairs to read together if you're hacking on the upload/job flo
 ## 12. Next Steps (P4–P6)
 
 ### P4 — Browser 3D Viewer (Recommended next deliverable)
+
 Once you have GLB/PLY URLs from a completed job, the viewer will:
+
 - Render the GLB with React Three Fiber (`/viewer?job_id=…` matches the `viewer_url` in the job response)
 - Fall back to a PLY point-cloud renderer for raw COLMAP outputs
 - Add mesh distance/angle measurement tools, annotation pins, and share-token URLs
 - Validate CORS against `:8000` backend
 
 ### P5 — Integration + Benchmarking Harness
+
 - E2E script: spin up backend → run mock edge capture → download PLY → assert vertex count ≥ N
 - Accuracy benchmark against reference CAD `.stl`
 - Headless browser viewer FPS benchmark (R3F on 100k / 1M / 10M triangles)
 - Pi 5 Hailo-8L thermal + power stress loop (1000 consecutive inferences)
 
 ### P6 — Optimization / Deploy / Handoff
+
 - Production Docker image (multi-stage, slim, no pip build deps)
 - Pre-flashed Pi 5 OS image + Ansible provisioning
 - Enclosure BOM + STL files (3D-printable with the camera + Hailo facing forward)
