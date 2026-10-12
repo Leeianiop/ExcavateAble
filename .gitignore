@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+.eggs/
+build/
+dist/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Backend runtime data
+backend/data/
+backend/*.sqlite
+backend/job_state.json
+
+# Edge node captures & logs
+edge_node/captures/
+edge_node/logs/
+edge_node/models/*.hef
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+*.log
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Hardware project files (large binaries)
+*.stl
+*.f3d
+*.step
+*.stp
+*.zip

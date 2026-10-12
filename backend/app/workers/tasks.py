@@ -12,6 +12,7 @@ from celery import Celery
 from celery.signals import worker_process_init
 
 from ..config import get_settings, Settings
+from ..schemas import JobStage
 from ..storage import ObjectStore
 from ..storage.job_store import JobStore
 from ..workers.reconstruction import ReconstructionWorker
@@ -81,7 +82,7 @@ def reconstruct_3d(self, job_id: str, bundle_id: str) -> dict:
         shots = manifest.get("shots", [])
         progress_cb = _progress_cb(job_id)
         progress_cb(
-            __import__("..schemas", fromlist=["JobStage"]).JobStage.DOWNLOAD_BUNDLE,
+            JobStage.DOWNLOAD_BUNDLE,
             2.0,
             f"Downloading {len(shots)} shots from object store",
         )
