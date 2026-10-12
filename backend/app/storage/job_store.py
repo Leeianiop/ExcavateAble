@@ -44,9 +44,15 @@ class JobStore:
         self._state_path: Path = settings.temp_dir / "job_state.json"
 
     def initialize(self) -> None:
+        if self.settings.job_store_backend == "memory":
+            logger.info("Using in-memory job store (job_store_backend=memory)")
+            self._redis_available = False
+            self._load_from_disk()
+            return
+
         try:
             import redis as redis_lib
-            self._redis = redis_lib.Redis.from_url(self.settings.redis_url, decode_responses=True)
+            self._redis = redis_lib.Redis.from_url(self.settings.redis_url, decode_responses=True, socket_connect_timeout=2)
             self._redis.ping()
             self._redis_available = True
             logger.info("Redis-backed job store connected")
@@ -98,6 +104,10 @@ class JobStore:
     # ------------------------------------------------------------------
     # Job state
     # ------------------------------------------------------------------
+    def _update_job_status(self, job_id: str, status: JobStatus) -> None:
+        job = self._jobs.setdefault(job_id, {})
+        job["status"] = status.value
+
     def _ensure_job(self, job_id: str, bundle_id: str, num_shots: int, status: JobStatus) -> None:
         if job_id in self._jobs:
             return
@@ -148,7 +158,7 @@ class JobStore:
                 started_at=datetime.utcnow(),
             )
             existing = [p for p in job.get("progress", []) if p.get("stage") != stage.value]
-            existing.append(asdict(prog))
+            existing.append(prog.model_dump(mode="json"))
             job["progress"] = existing
             self._persist()
 

@@ -19,8 +19,8 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile, status, Query
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status, Query
+from fastapi.responses import FileResponse, RedirectResponse
 
 from ..config import Settings, get_settings
 from ..schemas import (
@@ -106,11 +106,11 @@ def init_bundle(
 
 
 @v1_router.put("/bundles/{bundle_id}/shots/{shot_id}/{role}")
-def upload_shot_file(
+async def upload_shot_file(
     bundle_id: str,
     shot_id: str,
     role: str,
-    file: UploadFile = File(...),
+    request: Request,
     x_content_sha256: Optional[str] = Header(default=None),
     store: ObjectStore = Depends(get_object_store),
     jobs: JobStore = Depends(get_job_store),
@@ -122,19 +122,19 @@ def upload_shot_file(
     if state is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Bundle {bundle_id} not initialized")
 
-    data = file.file.read()
+    raw = await request.body()
     expected_mb = settings.max_upload_size_mb
-    if len(data) > expected_mb * 1024 * 1024:
+    if len(raw) > expected_mb * 1024 * 1024:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, f"File exceeds {expected_mb}MB")
 
     key = ObjectStore.bundle_key(bundle_id, shot_id, role)
-    content_type = file.content_type or "application/octet-stream"
+    ctype = request.headers.get("content-type", "application/octet-stream")
     try:
         obj = store.put_bytes(
             bucket=settings.minio_bundle_bucket,
             key=key,
-            data=data,
-            content_type=content_type,
+            data=raw,
+            content_type=ctype,
             expected_etag=x_content_sha256,
         )
     except ValueError as exc:
@@ -145,9 +145,9 @@ def upload_shot_file(
 
 
 @v1_router.post("/bundles/{bundle_id}/finalize", response_model=BundleFinalizeResponse)
-def finalize_bundle(
+async def finalize_bundle(
     bundle_id: str,
-    raw: bytes,
+    request: Request,
     x_manifest_sha256: Optional[str] = Header(default=None),
     store: ObjectStore = Depends(get_object_store),
     jobs: JobStore = Depends(get_job_store),
@@ -157,6 +157,7 @@ def finalize_bundle(
     if state is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Bundle {bundle_id} not initialized")
 
+    raw = await request.body()
     actual_etag = ObjectStore.etag_sha256(raw)
     if actual_etag != state.manifest_etag:
         raise HTTPException(
@@ -193,8 +194,11 @@ def finalize_bundle(
 
         def _inline_run():
             try:
-                from ..workers.tasks import _init_worker_process, reconstruct_3d
-                _init_worker_process()
+                from ..workers import tasks as _tasks
+                from ..workers.reconstruction import ReconstructionWorker
+                _tasks._object_store = store
+                _tasks._job_store = jobs
+                _tasks._engine = ReconstructionWorker(settings)
                 reconstruct_3d.apply(args=[job_id, bundle_id]).get()
             except Exception:
                 logger.exception(f"Inline reconstruction failed for job {job_id}")
@@ -232,7 +236,7 @@ def get_ply(
     store: ObjectStore = Depends(get_object_store),
     jobs: JobStore = Depends(get_job_store),
     settings: Settings = Depends(get_settings),
-) -> RedirectResponse:
+):
     job = jobs.get_job(job_id)
     if job is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Job {job_id} not found")
@@ -241,6 +245,8 @@ def get_ply(
     key = ObjectStore.asset_key(job_id, "ply")
     if not store.exists(settings.minio_asset_bucket, key):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "PLY not yet generated")
+    if store._use_fs:
+        return FileResponse(store._resolve(settings.minio_asset_bucket, key), media_type="application/octet-stream", filename=f"{job_id}.ply")
     return RedirectResponse(
         store.presigned_get_url(settings.minio_asset_bucket, key)
     )
@@ -252,7 +258,7 @@ def get_glb(
     store: ObjectStore = Depends(get_object_store),
     jobs: JobStore = Depends(get_job_store),
     settings: Settings = Depends(get_settings),
-) -> RedirectResponse:
+):
     job = jobs.get_job(job_id)
     if job is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Job {job_id} not found")
@@ -261,6 +267,8 @@ def get_glb(
     key = ObjectStore.asset_key(job_id, "glb")
     if not store.exists(settings.minio_asset_bucket, key):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "GLB not yet generated")
+    if store._use_fs:
+        return FileResponse(store._resolve(settings.minio_asset_bucket, key), media_type="model/gltf-binary", filename=f"{job_id}.glb")
     return RedirectResponse(
         store.presigned_get_url(settings.minio_asset_bucket, key)
     )
@@ -281,7 +289,10 @@ def list_assets(
         for fmt in ("ply", "glb"):
             key = ObjectStore.asset_key(job_id, fmt)
             if store.exists(settings.minio_asset_bucket, key):
-                url = store.presigned_get_url(settings.minio_asset_bucket, key)
+                if store._use_fs:
+                    url = f"/api/v1/assets/{job_id}/{fmt}"
+                else:
+                    url = store.presigned_get_url(settings.minio_asset_bucket, key)
                 size = 0
                 if fmt == "ply":
                     size = job.ply_size_bytes

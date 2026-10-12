@@ -9,6 +9,7 @@ fastapi>=0.105
 uvicorn[standard]>=0.24
 pydantic>=2.5
 pydantic-settings>=2.1
+python-multipart>=0.0.6
 
 # --- Queues / storage clients ---
 celery>=5.3
@@ -17,7 +18,7 @@ minio>=7.2
 httpx>=0.25
 
 # --- Python data / image ---
-numpy>=1.24,<2
+numpy>=2.2
 Pillow>=10.0
 PyYAML>=6.0
 
@@ -29,4 +30,3 @@ PyYAML>=6.0
 # --- Dev / testing (optional) ---
 # pytest>=7.0
 # ruff>=0.1
-# python-multipart>=0.0.6   # (pulled in by FastAPI UploadFile)

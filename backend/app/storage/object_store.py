@@ -50,7 +50,14 @@ class ObjectStore:
         if self._client is not None or self._use_fs:
             return
 
-        if _MINIO_AVAILABLE:
+        if self.settings.storage_backend == "fs":
+            self._use_fs = True
+            for bucket in (self.settings.minio_bundle_bucket, self.settings.minio_asset_bucket):
+                (self._fs_root / bucket).mkdir(parents=True, exist_ok=True)
+            logger.info(f"FS-backed object store ready at {self._fs_root} (storage_backend=fs)")
+            return
+
+        if _MINIO_AVAILABLE and self.settings.storage_backend in ("auto", "minio"):
             try:
                 self._client = Minio(
                     endpoint=self.settings.minio_endpoint,
@@ -64,6 +71,8 @@ class ObjectStore:
                 logger.info(f"MinIO connected: {self.settings.minio_endpoint}")
                 return
             except Exception as exc:
+                if self.settings.storage_backend == "minio":
+                    raise
                 logger.warning(f"MinIO unreachable ({exc}) — falling back to FS storage")
 
         self._use_fs = True
@@ -165,16 +174,15 @@ class ObjectStore:
         except S3Error:
             return False
 
-    def presigned_get_url(self, bucket: str, key: str, expires_seconds: int = 86400) -> str:
+    def presigned_get_url(self, bucket: str, key: str, expires_seconds: int = 86400) -> Optional[str]:
         if self._use_fs:
-            return f"file://{self._resolve(bucket, key).resolve()}"
+            return None
         assert self._client is not None
         return self._client.presigned_get_object(bucket, key, expires=expires_seconds)
 
-    def presigned_put_url(self, bucket: str, key: str, expires_seconds: int = 3600) -> str:
+    def presigned_put_url(self, bucket: str, key: str, expires_seconds: int = 3600) -> Optional[str]:
         if self._use_fs:
-            self._resolve(bucket, key).parent.mkdir(parents=True, exist_ok=True)
-            return f"file://{self._resolve(bucket, key).resolve()}"
+            return None
         assert self._client is not None
         return self._client.presigned_put_object(bucket, key, expires=expires_seconds)
 
