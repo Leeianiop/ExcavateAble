@@ -172,20 +172,57 @@ def cmd_capture_and_upload(args: argparse.Namespace) -> int:
         print(f"UPLOAD FAILED: {result.error}")
         return 3
 
-    print(f"Upload OK:")
-    print(f"  job_id       : {result.job_id}")
-    print(f"  uploaded_MB    : {result.uploaded_bytes / (1024*1024):.2f}")
-    print(f"  attempts   : {result.attempt_count}")
-    print(f"  elapsed    : {result.elapsed_sec:.1f}s")
-    if result.asset_url:
-        print(f"  viewer URL  : {result.asset_url}")
+    _print_job_banner(result.job_id, result.uploaded_bytes, result.attempt_count, result.elapsed_sec, result.asset_url)
 
     if args.wait and result.job_id:
         print("\nWaiting for backend reconstruction (polling job status)...")
         with BackendUploadClient(config.upload) as client:
             final = client.poll_job_status(result.job_id, timeout_sec=600)
-        print(f"Final status: {final}")
+        final_status = final.get("status") if isinstance(final, dict) else getattr(final, "status", None)
+        print(f"Final status: {final_status}")
+        if final_status == "completed":
+            _print_job_banner(result.job_id, result.uploaded_bytes, result.attempt_count, result.elapsed_sec, result.asset_url, final=final)
     return 0
+
+
+def _print_job_banner(job_id: str, uploaded_bytes: int, attempt_count: int, elapsed_sec: float, asset_url: str | None, final=None) -> None:
+    def _get(obj, key, default=None):
+        if isinstance(obj, dict):
+            return obj.get(key, default)
+        return getattr(obj, key, default)
+
+    bar = "=" * 72
+    print(f"\n{bar}")
+    print("  UPLOAD COMPLETE")
+    print(f"{bar}")
+    print(f"  job_id        : {job_id}")
+    print(f"  uploaded_MB   : {uploaded_bytes / (1024*1024):.2f}")
+    print(f"  attempts      : {attempt_count}")
+    print(f"  elapsed       : {elapsed_sec:.1f}s")
+    if final is not None:
+        print(f"  final status  : {_get(final, 'status', '?')}")
+        ply = _get(final, "ply_url")
+        glb = _get(final, "glb_url")
+        verts = _get(final, "ply_vertices")
+        faces = _get(final, "ply_faces")
+        if verts is None:
+            verts = _get(final, "num_vertices")
+        if faces is None:
+            faces = _get(final, "num_faces")
+        if verts is not None:
+            print(f"  PLY vertices  : {verts:,}")
+        if faces is not None:
+            print(f"  PLY faces     : {faces:,}")
+        if ply:
+            print(f"  PLY URL       : {ply}")
+        if glb:
+            print(f"  GLB URL       : {glb}")
+    if asset_url:
+        print(f"  viewer URL    : {asset_url}")
+    print(f"{bar}")
+    print(f"  Paste the job_id above into the Dashboard Job Lookup:")
+    print(f"  http://localhost:5173")
+    print(f"{bar}\n")
 
 
 def build_parser() -> argparse.ArgumentParser:

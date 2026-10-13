@@ -113,13 +113,14 @@ npm run build
 
 ## 3. End-to-End Test (no hardware needed)
 
-Once both backend and frontend are running, you can run a full mock scan:
+Once both backend and frontend are running, you can run a full mock scan.
+
+> **Run this from the repo root** (`SnakeBot/`), **not** from inside `edge_node/`. Running from inside `edge_node/` gives `No module named edge_node`.
 
 ```bash
-# In a new terminal, from the repo root
-cd edge_node
-pip install -r requirements.txt
-python -m edge_node capture-and-upload --shots 20 --interval 0.1 --wait
+# From the repo root (SnakeBot/)
+# (use backend's venv if you don't have a global Python with the deps)
+backend\.venv\Scripts\python -m edge_node capture-and-upload --shots 20 --interval 0.1 --wait
 ```
 
 This:
@@ -128,32 +129,71 @@ This:
 3. The backend runs a 9-stage reconstruction pipeline (mock mode → synthetic PLY/GLB)
 4. Waits for the job to complete
 
-When it finishes, copy the printed `job_id`, then paste it into the **Dashboard → Job Lookup** field on the frontend. You'll see the 9-stage progress timeline, then **Open 3D Viewer** to see the rendered mesh.
+When it finishes, a big banner prints the `job_id`. Copy it, then paste it into the **Dashboard → Job Lookup** field on the frontend. You'll see the 9-stage progress timeline, then **Open 3D Viewer** to see the rendered mesh.
 
 ---
 
-## 4. Edge Node (real hardware, optional)
+## 4. Edge Node (real hardware — Raspberry Pi 5)
 
-For actual scanning on a Raspberry Pi 5 with Camera Module v3 + Hailo-8L:
+This section connects a real Raspberry Pi 5 (with Camera Module v3 + Hailo-8L) to your backend.
+
+### Step 1 — Find your backend's LAN IP
+
+The Pi cannot reach `localhost` (that points to the Pi itself). You need your Windows/Mac machine's LAN IP.
+
+**Windows PowerShell:**
+```powershell
+ipconfig | Select-String "IPv4"
+```
+**macOS/Linux:**
+```bash
+ipconfig getifaddr en0   # or: hostname -I
+```
+You'll get something like `192.168.1.50`. **Write this down.**
+
+### Step 2 — Start the backend so the Pi can reach it
+
+The backend must bind to `0.0.0.0` (not `127.0.0.1`) so other devices on the network can connect:
 
 ```bash
-# On the Pi (Raspberry Pi OS Bookworm 64-bit)
+cd backend
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+### Step 3 — Set up the Pi
+
+SSH into the Pi (Raspberry Pi OS Bookworm 64-bit):
+
+```bash
 sudo apt install -y python3-picamera2 python3-libcamera python3-pip python3-venv
 sudo apt install -y hailort hailort-py   # Hailo-8L SDK
 
-cd edge_node
+cd ~/SnakeBot/edge_node
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
 
-# Point upload at your backend's LAN IP
-# edit edge_node/config/config.yaml -> upload.backend_url: "http://192.168.1.42:8000"
+### Step 4 — Point the Pi at your backend
 
-python -m edge_node health-check
+Edit `edge_node/config/config.yaml` on the Pi and set `backend_url` to your machine's LAN IP from Step 1:
+
+```yaml
+upload:
+  backend_url: "http://192.168.1.50:8000"   # ← your LAN IP here
+```
+
+### Step 5 — Run a real scan
+
+```bash
+cd ~/SnakeBot
+python -m edge_node health-check            # verifies camera + Hailo + backend reachability
 python -m edge_node capture-and-upload --shots 20 --interval 1.5 --wait
 ```
 
-You need Hailo `.hef` model files in `edge_node/models/` (download from [Hailo Model Zoo](https://github.com/hailo-ai/hailo_model_zoo)).
+The big banner prints the `job_id`. Paste it into **http://localhost:5173** → Job Lookup → Open 3D Viewer.
+
+> You also need Hailo `.hef` model files in `edge_node/models/` (download `yolov8n-seg.hef` + `dpt_lite.hef` from the [Hailo Model Zoo](https://github.com/hailo-ai/hailo_model_zoo)). Without them, the AI inference falls back to mock masks/depth.
 
 ---
 

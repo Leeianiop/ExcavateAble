@@ -34,6 +34,9 @@ def setup_logging(config: LoggingConfig) -> None:
     console.setFormatter(fmt)
     root.addHandler(console)
 
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+
     try:
         file_handler = RotatingFileHandler(
             config.file,
