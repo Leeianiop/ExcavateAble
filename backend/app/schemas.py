@@ -105,3 +105,23 @@ class AssetInfo(BaseModel):
     size_bytes: int
     url: str
     created_at: datetime
+
+
+# ------------------------------------------------------------------
+# Live stream (real-time artifact detection feed)
+# ------------------------------------------------------------------
+class LiveDetection(BaseModel):
+    label: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    bbox: list[float] = Field(description="[x, y, w, h] normalized 0..1")
+
+
+class LiveFrameResponse(BaseModel):
+    timestamp: datetime
+    width: int
+    height: int
+    detections: list[LiveDetection] = Field(default_factory=list)
+    depth_min: float = 0.0
+    depth_max: float = 0.0
+    depth_mean: float = 0.0
+    image_url: str = "/api/v1/live/frame/image"

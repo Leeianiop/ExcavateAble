@@ -20,7 +20,8 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status, Query
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
+from datetime import datetime
 
 from ..config import Settings, get_settings
 from ..schemas import (
@@ -30,6 +31,8 @@ from ..schemas import (
     BundleInitResponse,
     JobResponse,
     ShotUploadItem,
+    LiveFrameResponse,
+    LiveDetection,
 )
 from ..storage import ObjectStore
 from ..storage.job_store import JobStore
@@ -40,6 +43,9 @@ v1_router = APIRouter()
 
 _OBJECT_STORE: ObjectStore | None = None
 _JOB_STORE: JobStore | None = None
+
+# In-memory live frame store (latest frame only — digital twin feed)
+_live_frame: dict | None = None
 
 
 def get_object_store(settings: Settings = Depends(get_settings)) -> ObjectStore:
@@ -308,3 +314,77 @@ def list_assets(
                     created_at=job.created_at,
                 ))
     return out
+
+
+# ------------------------------------------------------------------
+# Live stream (real-time artifact detection feed — digital twin)
+# ------------------------------------------------------------------
+@v1_router.post("/live/frame", response_model=LiveFrameResponse)
+async def upload_live_frame(request: Request) -> LiveFrameResponse:
+    """Receive a live frame + AI detections from the edge node."""
+    global _live_frame
+    form = await request.form()
+    image = form.get("image")
+    metadata_raw = form.get("metadata")
+
+    if image is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Missing 'image' field")
+
+    image_bytes = await image.read() if hasattr(image, "read") else image
+    if isinstance(image_bytes, str):
+        image_bytes = image_bytes.encode("utf-8")
+
+    meta: dict = {}
+    if metadata_raw:
+        if hasattr(metadata_raw, "read"):
+            metadata_raw = await metadata_raw.read()
+        if isinstance(metadata_raw, bytes):
+            metadata_raw = metadata_raw.decode("utf-8")
+        try:
+            meta = _json.loads(metadata_raw)
+        except _json.JSONDecodeError:
+            meta = {}
+
+    detections = [
+        LiveDetection(**d) for d in meta.get("detections", [])
+    ]
+
+    _live_frame = {
+        "image_bytes": image_bytes,
+        "response": LiveFrameResponse(
+            timestamp=datetime.utcnow(),
+            width=int(meta.get("width", 0)),
+            height=int(meta.get("height", 0)),
+            detections=detections,
+            depth_min=float(meta.get("depth_min", 0.0)),
+            depth_max=float(meta.get("depth_max", 0.0)),
+            depth_mean=float(meta.get("depth_mean", 0.0)),
+            image_url="/api/v1/live/frame/image",
+        ),
+    }
+    return _live_frame["response"]
+
+
+@v1_router.get("/live/frame", response_model=LiveFrameResponse)
+def get_live_frame() -> LiveFrameResponse:
+    """Return the latest live frame metadata (detections, depth stats)."""
+    if _live_frame is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            "No live frame yet — edge node must start streaming first",
+        )
+    return _live_frame["response"]
+
+
+@v1_router.get("/live/frame/image")
+def get_live_frame_image() -> Response:
+    """Return the latest live frame as a JPEG image."""
+    if _live_frame is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            "No live frame yet — edge node must start streaming first",
+        )
+    return Response(
+        content=_live_frame["image_bytes"],
+        media_type="image/jpeg",
+    )

@@ -35,6 +35,9 @@ export const Navbar: React.FC = () => {
           <NavLink to="/" end className={linkClass}>
             Dashboard
           </NavLink>
+          <NavLink to="/live" className={linkClass}>
+            Live Feed
+          </NavLink>
           <NavLink to="/assets" className={linkClass}>
             Asset Library
           </NavLink>

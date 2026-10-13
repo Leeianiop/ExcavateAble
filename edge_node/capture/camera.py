@@ -79,6 +79,10 @@ class CameraCapture:
         return self._initialized
 
     @property
+    def using_hardware(self) -> bool:
+        return self._picam is not None
+
+    @property
     def session_id(self) -> str:
         return self._session_id
 
@@ -91,38 +95,43 @@ class CameraCapture:
             self._initialized = True
             return
 
-        self._picam = Picamera2()
+        try:
+            self._picam = Picamera2()
 
-        capture_cfg = self._picam.create_still_configuration(
-            main={
-                "size": (self.config.width, self.config.height),
-                "format": "RGB888",
-            },
-            raw={
-                "size": (self.config.width, self.config.height),
-                "format": self._picam.sensor_format,
-            },
-            buffer_count=2,
-        )
-        self._picam.configure(capture_cfg)
+            capture_cfg = self._picam.create_still_configuration(
+                main={
+                    "size": (self.config.width, self.config.height),
+                    "format": "RGB888",
+                },
+                raw={
+                    "size": (self.config.width, self.config.height),
+                    "format": self._picam.sensor_format,
+                },
+                buffer_count=2,
+            )
+            self._picam.configure(capture_cfg)
 
-        self._picam.set_controls({
-            "AwbMode": self._parse_awb_mode(self.config.awb_mode),
-            "AeMode": self._parse_exposure_mode(self.config.exposure_mode),
-            "AnalogueGain": self.config.iso / 100.0 if self.config.iso > 0 else 1.0,
-        })
-        if self.config.shutter_speed > 0:
             self._picam.set_controls({
-                "ExposureTime": int(self.config.shutter_speed),
+                "AwbMode": self._parse_awb_mode(self.config.awb_mode),
+                "AeMode": self._parse_exposure_mode(self.config.exposure_mode),
+                "AnalogueGain": self.config.iso / 100.0 if self.config.iso > 0 else 1.0,
             })
+            if self.config.shutter_speed > 0:
+                self._picam.set_controls({
+                    "ExposureTime": int(self.config.shutter_speed),
+                })
 
-        self._picam.start()
-        time.sleep(2.0)
-        logger.info(
-            f"Camera initialized: {self.config.width}x{self.config.height} "
-            f"@ ISO {self.config.iso}, AWB={self.config.awb_mode}"
-        )
-        self._initialized = True
+            self._picam.start()
+            time.sleep(2.0)
+            logger.info(
+                f"Camera initialized: {self.config.width}x{self.config.height} "
+                f"@ ISO {self.config.iso}, AWB={self.config.awb_mode}"
+            )
+            self._initialized = True
+        except Exception as exc:
+            logger.warning(f"Camera HW init failed ({exc}) — falling back to mock camera mode")
+            self._picam = None
+            self._initialized = True
 
     def close(self) -> None:
         if self._picam is not None:

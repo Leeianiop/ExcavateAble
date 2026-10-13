@@ -85,8 +85,7 @@ def cmd_health_check(args: argparse.Namespace) -> int:
 
 def _PICAMERA_ACTIVE(cam) -> bool:
     try:
-        from .capture.camera import _PICAMERA_AVAILABLE
-        return _PICAMERA_AVAILABLE and cam.initialized
+        return getattr(cam, "using_hardware", False)
     except Exception:
         return False
 
@@ -225,6 +224,139 @@ def _print_job_banner(job_id: str, uploaded_bytes: int, attempt_count: int, elap
     print(f"{bar}\n")
 
 
+def _encode_jpeg(rgb: "np.ndarray", quality: int = 80, max_width: int = 1280) -> tuple[bytes, int, int]:
+    from PIL import Image
+    import io
+    h, w = rgb.shape[:2]
+    if w > max_width:
+        scale = max_width / w
+        new_w, new_h = max_width, int(h * scale)
+        img = Image.fromarray(rgb).resize((new_w, new_h), Image.LANCZOS)
+    else:
+        new_w, new_h = w, h
+        img = Image.fromarray(rgb)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=quality)
+    return buf.getvalue(), new_w, new_h
+
+
+def cmd_live_stream(args: argparse.Namespace) -> int:
+    """Continuously capture + AI-infer + push live frames to the backend (digital twin)."""
+    import numpy as np
+
+    config = _load_config(args.config)
+    if args.interval is not None:
+        config.capture.shot_interval_sec = float(args.interval)
+    if args.backend:
+        config.upload.backend_url = args.backend
+
+    from .capture import CameraCapture
+    from .ai import HailoInferenceEngine
+    from .pipeline import BackendUploadClient
+
+    interval = max(0.1, config.capture.shot_interval_sec)
+    backend_url = config.upload.backend_url.rstrip("/")
+
+    print(f"\n=== Live Stream (digital twin) ===")
+    print(f"  backend    : {backend_url}")
+    print(f"  interval   : {interval:.2f}s")
+    print(f"  resolution : {config.capture.width}x{config.capture.height}")
+    print(f"  (Ctrl+C to stop)\n")
+
+    with CameraCapture(config.capture) as cam, \
+         HailoInferenceEngine(config.hailo) as ai, \
+         BackendUploadClient(config.upload) as client:
+
+        if not client.http_available or client._session is None:
+            print("ERROR: httpx not available — cannot stream to backend.")
+            return 3
+
+        frame_count = 0
+        shot_index = 0
+        try:
+            while True:
+                t_frame = time.perf_counter()
+
+                shot = cam.capture_single(shot_index)
+                shot_index += 1
+                rgb = shot.rgb_array
+                if rgb is None:
+                    print("[skip] capture returned None")
+                    time.sleep(interval)
+                    continue
+
+                seg, depth = ai.run_fused_pipeline(rgb)
+
+                detections = []
+                boxes = seg.boxes_xyxy
+                scores = seg.scores
+                class_ids = seg.class_ids
+                h, w = rgb.shape[:2]
+                class_names = {0: "artifact", 1: "anomaly", 2: "structure"}
+                if boxes is not None and len(boxes) > 0:
+                    for i, box in enumerate(boxes):
+                        x1, y1, x2, y2 = float(box[0]), float(box[1]), float(box[2]), float(box[3])
+                        bw = (x2 - x1) / w
+                        bh = (y2 - y1) / h
+                        nx = x1 / w
+                        ny = y1 / h
+                        cls_id = int(class_ids[i]) if class_ids is not None and i < len(class_ids) else 0
+                        conf = float(scores[i]) if scores is not None and i < len(scores) else 0.8
+                        detections.append({
+                            "label": class_names.get(cls_id, f"class_{cls_id}"),
+                            "confidence": round(conf, 3),
+                            "bbox": [round(nx, 4), round(ny, 4), round(bw, 4), round(bh, 4)],
+                        })
+
+                depth_map = depth.depth_map
+                d_min = float(depth_map.min()) if depth_map is not None else 0.0
+                d_max = float(depth_map.max()) if depth_map is not None else 0.0
+                d_mean = float(depth_map.mean()) if depth_map is not None else 0.0
+
+                jpeg_bytes, fw, fh = _encode_jpeg(rgb)
+
+                metadata = {
+                    "width": fw,
+                    "height": fh,
+                    "detections": detections,
+                    "depth_min": round(d_min, 4),
+                    "depth_max": round(d_max, 4),
+                    "depth_mean": round(d_mean, 4),
+                }
+
+                try:
+                    resp = client._session.post(
+                        f"{backend_url}/api/v1/live/frame",
+                        files={"image": ("frame.jpg", jpeg_bytes, "image/jpeg")},
+                        data={"metadata": _json_dumps(metadata)},
+                        timeout=5.0,
+                    )
+                    if resp.status_code != 200:
+                        print(f"[warn] POST live frame: HTTP {resp.status_code}")
+                    else:
+                        frame_count += 1
+                        elapsed = (time.perf_counter() - t_frame) * 1000
+                        det_str = f"{len(detections)} det" if detections else "no det"
+                        print(f"  frame #{frame_count}  {w}x{h}  {det_str}  "
+                              f"depth=[{d_min:.2f},{d_max:.2f}]  {elapsed:.0f}ms")
+                except Exception as exc:
+                    print(f"[warn] upload failed: {exc}")
+
+                sleep_time = interval - (time.perf_counter() - t_frame)
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+
+        except KeyboardInterrupt:
+            print(f"\n\nLive stream stopped after {frame_count} frames.")
+
+    return 0
+
+
+def _json_dumps(obj) -> str:
+    import json
+    return json.dumps(obj)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="edge-node",
@@ -254,6 +386,11 @@ def build_parser() -> argparse.ArgumentParser:
     up.add_argument("--api-key", "-k", type=str, default=None, help="Backend API key")
     up.add_argument("--wait", "-w", action="store_true", help="Poll until reconstruction job completes")
     up.set_defaults(func=cmd_capture_and_upload)
+
+    ls = sub.add_parser("live-stream", help="Live stream: capture+AI-infer+push frames every second (digital twin)")
+    ls.add_argument("--interval", "-i", type=float, default=None, help="Seconds between frames (default: 1.0)")
+    ls.add_argument("--backend", "-b", type=str, default=None, help="Override backend URL")
+    ls.set_defaults(func=cmd_live_stream)
 
     return p
 

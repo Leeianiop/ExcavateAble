@@ -96,6 +96,23 @@ export interface HealthResponse {
   job_store: string;
 }
 
+export interface LiveDetection {
+  label: string;
+  confidence: number;
+  bbox: number[];
+}
+
+export interface LiveFrameResponse {
+  timestamp: string;
+  width: number;
+  height: number;
+  detections: LiveDetection[];
+  depth_min: number;
+  depth_max: number;
+  depth_mean: number;
+  image_url: string;
+}
+
 export const JOB_STAGE_LABELS: Record<JobStage, string> = {
   download_bundle: "Download Bundle",
   background_strip: "Background Strip",

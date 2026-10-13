@@ -5,6 +5,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { JobDetail } from "./pages/JobDetail";
 import { AssetLibrary } from "./pages/AssetLibrary";
 import { Viewer } from "./pages/Viewer";
+import { LiveStream } from "./pages/LiveStream";
 import "./index.css";
 
 const NotFound: React.FC = () => (
@@ -25,6 +26,7 @@ export const App: React.FC = () => {
       <Routes>
         <Route element={<Layout />}>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/live" element={<LiveStream />} />
           <Route path="/jobs/:jobId" element={<JobDetail />} />
           <Route path="/assets" element={<AssetLibrary />} />
           <Route path="/viewer/:jobId" element={<Viewer />} />
