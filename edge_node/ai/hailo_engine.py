@@ -361,10 +361,8 @@ class HailoInferenceEngine:
             resized = cv2.resize(rgb, (w, h), interpolation=cv2.INTER_CUBIC)
         except ImportError:
             resized = self._numpy_resize(rgb, h, w)
+        # SCDepthV3 / fast_depth expect simple [0,1] normalization (no ImageNet mean/std)
         tensor = resized.astype(np.float32) / 255.0
-        mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
-        std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
-        tensor = (tensor - mean) / std
         return np.transpose(tensor, (2, 0, 1))[np.newaxis, ...]
 
     def _infer_depth(self, tensor: np.ndarray) -> dict:

@@ -19,8 +19,8 @@ hailo:
   depth_model_path: "./models/dpt_lite.hef"
   input_width: 640
   input_height: 640
-  depth_input_width: 518
-  depth_input_height: 518
+  depth_input_width: 320
+  depth_input_height: 256
   threshold: 0.5
   nms_threshold: 0.45
   device_id: 0
