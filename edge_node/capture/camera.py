@@ -111,15 +111,20 @@ class CameraCapture:
             )
             self._picam.configure(capture_cfg)
 
-            self._picam.set_controls({
+            # Set controls defensively — individual controls like AeMode may not
+            # be advertised by all sensors (e.g. IMX708 on Camera Module v3).
+            control_map = {
                 "AwbMode": self._parse_awb_mode(self.config.awb_mode),
                 "AeMode": self._parse_exposure_mode(self.config.exposure_mode),
                 "AnalogueGain": self.config.iso / 100.0 if self.config.iso > 0 else 1.0,
-            })
+            }
             if self.config.shutter_speed > 0:
-                self._picam.set_controls({
-                    "ExposureTime": int(self.config.shutter_speed),
-                })
+                control_map["ExposureTime"] = int(self.config.shutter_speed)
+            for name, value in control_map.items():
+                try:
+                    self._picam.set_controls({name: value})
+                except Exception as exc:
+                    logger.warning(f"Camera control '{name}' not supported: {exc}")
 
             self._picam.start()
             time.sleep(2.0)
@@ -148,10 +153,9 @@ class CameraCapture:
         shot_id = f"{self._session_id}_{shot_index:03d}"
         timestamp_ns = time.time_ns()
 
-        if not _PICAMERA_AVAILABLE:
+        if self._picam is None:
             return self._capture_mock(shot_id, shot_index, timestamp_ns)
 
-        assert self._picam is not None
         request = self._picam.capture_request()
 
         try:

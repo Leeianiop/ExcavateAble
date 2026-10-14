@@ -82,7 +82,7 @@ def cmd_health_check(args: argparse.Namespace) -> int:
     print("\n=== Health Check Complete ===")
     return 0
 
-
+yo 
 def _PICAMERA_ACTIVE(cam) -> bool:
     try:
         return getattr(cam, "using_hardware", False)
