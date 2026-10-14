@@ -18,28 +18,39 @@ from ..config import HailoConfig
 
 logger = logging.getLogger(__name__)
 
-try:
-    from hailo_platform import (
-        HEF,
-        HailoStreamInterface,
-        InferVStreams,
-        ConfigureParams,
-        InputVStreamParams,
-        OutputVStreamParams,
-        FormatType,
-        HAILO,
-    )
-    _HAILO_AVAILABLE = True
-except ImportError:
+# Hailo SDK symbols are resolved lazily so the module imports cleanly on
+# dev machines (Windows/macOS) where the Hailo runtime is not installed.
+_HAILO_SYMBOLS = (
+    "HEF",
+    "VDevice",
+    "HailoStreamInterface",
+    "InferVStreams",
+    "ConfigureParams",
+    "InputVStreamParams",
+    "OutputVStreamParams",
+    "FormatType",
+)
+
+_HAILO_AVAILABLE = False
+for _pkg in ("hailo_platform", "hailort"):
     try:
-        import hailort as _hr  # noqa: F401
+        _mod = __import__(_pkg, fromlist=list(_HAILO_SYMBOLS))
+        for _name in _HAILO_SYMBOLS:
+            globals()[_name] = getattr(_mod, _name)
         _HAILO_AVAILABLE = True
+        logger.info(f"Hailo SDK loaded from package: {_pkg}")
+        break
     except ImportError:
-        _HAILO_AVAILABLE = False
-        logger.warning(
-            "Hailo SDK not installed. Running AI in mock/simulation mode. "
-            "Install from: https://github.com/hailo-ai/hailort"
-        )
+        continue
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(f"Failed to import Hailo symbols from {_pkg}: {exc}")
+        continue
+
+if not _HAILO_AVAILABLE:
+    logger.warning(
+        "Hailo SDK not installed. Running AI in mock/simulation mode. "
+        "Install from: https://github.com/hailo-ai/hailort"
+    )
 
 
 @dataclass
@@ -84,10 +95,13 @@ class DepthResult:
 class HailoInferenceEngine:
     def __init__(self, config: HailoConfig):
         self.config = config
-        self._seg_device = None
-        self._depth_device = None
+        self._target = None  # VDevice (shared across models)
         self._seg_hef = None
         self._depth_hef = None
+        self._seg_network_group = None
+        self._depth_network_group = None
+        self._seg_activated = None
+        self._depth_activated = None
         self._seg_infer = None
         self._depth_infer = None
         self._initialized = False
@@ -206,6 +220,12 @@ class HailoInferenceEngine:
     # ------------------------------------------------------------------
     # Segmentation model management
     # ------------------------------------------------------------------
+    def _get_target(self):
+        """Return the shared VDevice, creating it on first use."""
+        if self._target is None:
+            self._target = VDevice()
+        return self._target
+
     def _load_segmentation_model(self) -> None:
         hef_path = Path(self.config.segmentation_model_path)
         if not hef_path.exists():
@@ -215,22 +235,27 @@ class HailoInferenceEngine:
             return
 
         hef = HEF(str(hef_path))
+        target = self._get_target()
         configure_params = ConfigureParams.create_from_hef(
             hef, interface=HailoStreamInterface.PCIe
         )
-        device = HAILO.create_device(device_id=self.config.device_id)
-        device.configure(configure_params)
+        network_groups = target.configure(hef, configure_params)
+        network_group = network_groups[0]
 
-        input_vstreams_params = InputVStreamParams.make_from_hef(
-            hef, device, quantized=False, format_type=FormatType.FLOAT32
+        input_vstreams_params = InputVStreamParams.make(
+            network_group, quantized=False, format_type=FormatType.FLOAT32
         )
-        output_vstreams_params = OutputVStreamParams.make_from_hef(
-            hef, device, quantized=False, format_type=FormatType.FLOAT32
+        output_vstreams_params = OutputVStreamParams.make(
+            network_group, quantized=False, format_type=FormatType.FLOAT32
         )
-        infer = InferVStreams(device, input_vstreams_params, output_vstreams_params)
+        activated = network_group.activate()
+        infer = InferVStreams(
+            activated, input_vstreams_params, output_vstreams_params
+        )
 
         self._seg_hef = hef
-        self._seg_device = device
+        self._seg_network_group = network_group
+        self._seg_activated = activated
         self._seg_infer = infer
         self._initialized_models.add("segmentation")
         logger.info(f"Segmentation model loaded: {hef_path.name}")
@@ -257,8 +282,7 @@ class HailoInferenceEngine:
 
     def _infer_segmentation(self, tensor: np.ndarray) -> dict:
         input_name = self._seg_hef.get_input_vstream_infos()[0].name
-        with self._seg_infer as infer:
-            return infer.infer({input_name: tensor})
+        return self._seg_infer.infer({input_name: tensor})
 
     def _postprocess_seg(
         self, raw: dict, original_shape: tuple[int, int]
@@ -305,22 +329,27 @@ class HailoInferenceEngine:
             return
 
         hef = HEF(str(hef_path))
+        target = self._get_target()
         configure_params = ConfigureParams.create_from_hef(
             hef, interface=HailoStreamInterface.PCIe
         )
-        device = HAILO.create_device(device_id=self.config.device_id)
-        device.configure(configure_params)
+        network_groups = target.configure(hef, configure_params)
+        network_group = network_groups[0]
 
-        input_vstreams_params = InputVStreamParams.make_from_hef(
-            hef, device, quantized=False, format_type=FormatType.FLOAT32
+        input_vstreams_params = InputVStreamParams.make(
+            network_group, quantized=False, format_type=FormatType.FLOAT32
         )
-        output_vstreams_params = OutputVStreamParams.make_from_hef(
-            hef, device, quantized=False, format_type=FormatType.FLOAT32
+        output_vstreams_params = OutputVStreamParams.make(
+            network_group, quantized=False, format_type=FormatType.FLOAT32
         )
-        infer = InferVStreams(device, input_vstreams_params, output_vstreams_params)
+        activated = network_group.activate()
+        infer = InferVStreams(
+            activated, input_vstreams_params, output_vstreams_params
+        )
 
         self._depth_hef = hef
-        self._depth_device = device
+        self._depth_network_group = network_group
+        self._depth_activated = activated
         self._depth_infer = infer
         self._initialized_models.add("depth")
         logger.info(f"Depth model loaded: {hef_path.name}")
@@ -340,8 +369,7 @@ class HailoInferenceEngine:
 
     def _infer_depth(self, tensor: np.ndarray) -> dict:
         input_name = self._depth_hef.get_input_vstream_infos()[0].name
-        with self._depth_infer as infer:
-            return infer.infer({input_name: tensor})
+        return self._depth_infer.infer({input_name: tensor})
 
     def _postprocess_depth(self, raw: dict, original_shape: tuple[int, int]) -> np.ndarray:
         output_tensors = list(raw.values())
@@ -427,7 +455,7 @@ class HailoInferenceEngine:
                 except Exception:
                     pass
                 setattr(self, attr, None)
-        for attr in ("_seg_device", "_depth_device"):
+        for attr in ("_seg_activated", "_depth_activated"):
             obj = getattr(self, attr, None)
             if obj is not None:
                 try:
@@ -435,6 +463,16 @@ class HailoInferenceEngine:
                 except Exception:
                     pass
                 setattr(self, attr, None)
+        for attr in ("_seg_network_group", "_depth_network_group"):
+            obj = getattr(self, attr, None)
+            if obj is not None:
+                setattr(self, attr, None)
+        if self._target is not None:
+            try:
+                self._target.close()
+            except Exception:
+                pass
+            self._target = None
         self._initialized_models.clear()
 
     @staticmethod

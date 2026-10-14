@@ -25,7 +25,9 @@ opencv-python-headless>=4.8
 #   https://github.com/hailo-ai/hailort  (HailoRT runtime)
 #   https://github.com/hailo-ai/hailo_model_zoo  (pre-compiled .hef models)
 #   sudo apt install -y hailort hailort-py
-# hailo_platform  # (imported as from hailo_platform import HEF, HAILO, ...)
+# Provides the `hailo_platform` package (imported as
+#   from hailo_platform import HEF, VDevice, InferVStreams, ...)
+# The engine also supports the newer `hailort` package as a fallback.
 
 # -------- Dev / testing (optional) --------
 # pytest>=7.0
