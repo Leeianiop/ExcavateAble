@@ -288,6 +288,9 @@ class HailoInferenceEngine:
         self, raw: dict, original_shape: tuple[int, int]
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         outputs = list(raw.values())
+        if logger.isEnabledFor(logging.DEBUG):
+            for i, o in enumerate(outputs):
+                logger.debug(f"  seg output[{i}] shape={o.shape} dtype={o.dtype}")
         if len(outputs) < 3:
             return (
                 np.zeros(original_shape, dtype=np.uint8),
