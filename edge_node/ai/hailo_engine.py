@@ -107,6 +107,24 @@ class HailoInferenceEngine:
         self._initialized = False
         self._initialized_models: set[str] = set()
 
+    def _resolve_hef_path(self, model_path: str) -> Path:
+        """Resolve a model path. Relative paths are searched in:
+        1. current working directory
+        2. edge_node package directory (edge_node/<path>)
+        """
+        p = Path(model_path)
+        if p.is_absolute() and p.exists():
+            return p
+        # Try relative to CWD first
+        if p.exists():
+            return p
+        # Fallback: try relative to the edge_node package directory
+        edge_root = Path(__file__).resolve().parent.parent  # edge_node/
+        alt = edge_root / p
+        if alt.exists():
+            return alt
+        return p  # return original so error message shows the expected path
+
     @property
     def initialized(self) -> bool:
         return self._initialized
@@ -227,7 +245,7 @@ class HailoInferenceEngine:
         return self._target
 
     def _load_segmentation_model(self) -> None:
-        hef_path = Path(self.config.segmentation_model_path)
+        hef_path = self._resolve_hef_path(self.config.segmentation_model_path)
         if not hef_path.exists():
             logger.warning(
                 f"Segmentation HEF not found at {hef_path}; seg will run in mock mode"
@@ -324,7 +342,7 @@ class HailoInferenceEngine:
     # Depth model management
     # ------------------------------------------------------------------
     def _load_depth_model(self) -> None:
-        hef_path = Path(self.config.depth_model_path)
+        hef_path = self._resolve_hef_path(self.config.depth_model_path)
         if not hef_path.exists():
             logger.warning(
                 f"Depth HEF not found at {hef_path}; depth will run in mock mode"
