@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # Hailo SDK symbols are resolved lazily so the module imports cleanly on
 # dev machines (Windows/macOS) where the Hailo runtime is not installed.
-_HAILO_SYMBOLS = (
+_HAILO_REQUIRED_SYMBOLS = (
     "HEF",
     "VDevice",
     "HailoStreamInterface",
@@ -30,13 +30,23 @@ _HAILO_SYMBOLS = (
     "OutputVStreamParams",
     "FormatType",
 )
+# Optional symbols that may not exist in older HailoRT versions.
+_HAILO_OPTIONAL_SYMBOLS = (
+    "HailoSchedulingAlgorithm",
+)
 
 _HAILO_AVAILABLE = False
 for _pkg in ("hailo_platform", "hailort"):
     try:
-        _mod = __import__(_pkg, fromlist=list(_HAILO_SYMBOLS))
-        for _name in _HAILO_SYMBOLS:
+        _mod = __import__(_pkg, fromlist=list(_HAILO_REQUIRED_SYMBOLS))
+        for _name in _HAILO_REQUIRED_SYMBOLS:
             globals()[_name] = getattr(_mod, _name)
+        # Try optional symbols individually (don't fail the whole import).
+        for _name in _HAILO_OPTIONAL_SYMBOLS:
+            try:
+                globals()[_name] = getattr(_mod, _name)
+            except AttributeError:
+                globals()[_name] = None
         _HAILO_AVAILABLE = True
         logger.info(f"Hailo SDK loaded from package: {_pkg}")
         break
@@ -96,12 +106,13 @@ class HailoInferenceEngine:
     def __init__(self, config: HailoConfig):
         self.config = config
         self._target = None  # VDevice (shared across models)
+        self._scheduler_enabled = False
         self._seg_hef = None
         self._depth_hef = None
         self._seg_network_group = None
         self._depth_network_group = None
-        self._seg_activated = None
-        self._depth_activated = None
+        self._seg_activated_ctx = None
+        self._depth_activated_ctx = None
         self._seg_infer = None
         self._depth_infer = None
         self._initialized = False
@@ -244,9 +255,33 @@ class HailoInferenceEngine:
     # Segmentation model management
     # ------------------------------------------------------------------
     def _get_target(self):
-        """Return the shared VDevice, creating it on first use."""
-        if self._target is None:
-            self._target = VDevice()
+        """Return the shared VDevice, creating it on first use.
+
+        Enables the ROUND_ROBIN scheduler so that multiple network groups
+        (segmentation + depth) can be active simultaneously. Without the
+        scheduler, only one network can be activated at a time.
+        """
+        if self._target is not None:
+            return self._target
+
+        sched_algo = globals().get("HailoSchedulingAlgorithm")
+        if sched_algo is not None:
+            try:
+                params = VDevice.create_params()
+                params.scheduling_algorithm = sched_algo.ROUND_ROBIN
+                self._target = VDevice(params=params)
+                self._scheduler_enabled = True
+                logger.info("Hailo VDevice created with ROUND_ROBIN scheduler")
+                return self._target
+            except Exception as exc:
+                logger.warning(
+                    f"Could not enable Hailo scheduler ({exc}); "
+                    f"falling back to default VDevice (single active network)"
+                )
+
+        self._target = VDevice()
+        self._scheduler_enabled = False
+        logger.info("Hailo VDevice created without scheduler")
         return self._target
 
     def _load_segmentation_model(self) -> None:
@@ -271,11 +306,15 @@ class HailoInferenceEngine:
         output_vstreams_params = OutputVStreamParams.make(
             network_group, quantized=False, format_type=FormatType.FLOAT32
         )
-        # HailoRT 4.x: activate() returns a context manager that must be
-        # entered before creating InferVStreams. InferVStreams takes the
-        # CONFIGURED network group (network_group), not the activated context.
-        activated_ctx = network_group.activate()
-        activated_ctx.__enter__()
+        # InferVStreams takes the CONFIGURED network group, not the activated
+        # context. When the scheduler is enabled, activation is automatic and
+        # calling activate() is deprecated. Without the scheduler, we must
+        # activate explicitly (and only one network can be active at a time).
+        activated_ctx = None
+        if not self._scheduler_enabled:
+            activated_ctx = network_group.activate()
+            activated_ctx.__enter__()
+
         infer = InferVStreams(
             network_group, input_vstreams_params, output_vstreams_params
         )
@@ -372,8 +411,11 @@ class HailoInferenceEngine:
         output_vstreams_params = OutputVStreamParams.make(
             network_group, quantized=False, format_type=FormatType.FLOAT32
         )
-        activated_ctx = network_group.activate()
-        activated_ctx.__enter__()
+        activated_ctx = None
+        if not self._scheduler_enabled:
+            activated_ctx = network_group.activate()
+            activated_ctx.__enter__()
+
         infer = InferVStreams(
             network_group, input_vstreams_params, output_vstreams_params
         )
@@ -502,9 +544,15 @@ class HailoInferenceEngine:
             obj = getattr(self, attr, None)
             if obj is not None:
                 setattr(self, attr, None)
-        # VDevice in HailoRT 4.x has no close() — release reference so the
-        # device is freed when the object is garbage collected.
-        self._target = None
+        # VDevice uses release() to free the device. Fall back to dropping the
+        # reference if release() is unavailable.
+        if self._target is not None:
+            try:
+                self._target.release()
+            except Exception:
+                pass
+            self._target = None
+        self._scheduler_enabled = False
         self._initialized_models.clear()
 
     @staticmethod
