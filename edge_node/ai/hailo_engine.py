@@ -117,6 +117,7 @@ class HailoInferenceEngine:
         self._depth_infer = None
         self._initialized = False
         self._initialized_models: set[str] = set()
+        self._logged_seg_shapes = False
 
     def _resolve_hef_path(self, model_path: str) -> Path:
         """Resolve a model path. Relative paths are searched in:
@@ -357,9 +358,12 @@ class HailoInferenceEngine:
         self, raw: dict, original_shape: tuple[int, int]
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         outputs = list(raw.values())
-        if logger.isEnabledFor(logging.DEBUG):
+        # Log output shapes once at INFO level so we can verify the model's
+        # raw feature-map structure without enabling DEBUG noise.
+        if not self._logged_seg_shapes:
             for i, o in enumerate(outputs):
-                logger.debug(f"  seg output[{i}] shape={o.shape} dtype={o.dtype}")
+                logger.info(f"  seg output[{i}] shape={o.shape} dtype={o.dtype}")
+            self._logged_seg_shapes = True
         if len(outputs) < 3:
             return (
                 np.zeros(original_shape, dtype=np.uint8),
@@ -370,6 +374,7 @@ class HailoInferenceEngine:
 
         boxes, scores, class_ids, masks = self._yolov8_seg_decode(
             outputs,
+            input_size=(self.config.input_height, self.config.input_width),
             conf_threshold=self.config.threshold,
             nms_threshold=self.config.nms_threshold,
         )
@@ -571,35 +576,171 @@ class HailoInferenceEngine:
     @staticmethod
     def _yolov8_seg_decode(
         outputs: list[np.ndarray],
+        input_size: tuple[int, int],
         conf_threshold: float,
         nms_threshold: float,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[np.ndarray]]:
-        if len(outputs) < 3:
+        """Decode YOLOv8-seg raw feature maps.
+
+        The Hailo YOLOv8-seg HEF does **not** output pre-decoded boxes/scores.
+        Instead it emits 10 raw tensors:
+          - 3 detection scales (P3/P4/P5), each with 3 heads:
+              * box   : 4 channels  (dist2bbox distances: left, top, right, bottom)
+              * cls   : nc channels (class logits, requires sigmoid)
+              * coeff : 32 channels (mask coefficients)
+          - 1 mask prototype : 32 channels at P2 resolution (in/4)
+
+        This function classifies each tensor by shape, applies dist2bbox,
+        sigmoid, confidence filtering, NMS, and generates per-instance masks
+        from coefficients x prototype.
+        """
+        if not outputs:
             return np.zeros((0, 4)), np.array([]), np.array([]), []
-        boxes_out, scores_out, masks_out = outputs[0], outputs[1], outputs[2]
 
-        boxes = boxes_out[0] if boxes_out.ndim == 3 else boxes_out
-        scores = scores_out[0] if scores_out.ndim == 3 else scores_out
-        masks = masks_out[0] if masks_out.ndim == 4 else masks_out
+        in_h, in_w = input_size
 
-        if scores.ndim == 2:
-            class_ids = scores.argmax(axis=1)
+        proto: Optional[np.ndarray] = None
+        # grid_size -> {"box": chw, "cls": chw, "coeff": chw}
+        scales: dict[int, dict[str, np.ndarray]] = {}
+
+        # --- Pass 1: locate the mask prototype and detect layout convention ---
+        # The proto tensor is unambiguous: 32 channels at P2 (in/4) resolution.
+        # 32 is never a valid grid size for 640-class inputs, so we can reliably
+        # tell NCHW [32,160,160] from NHWC [160,160,32].
+        layout_is_nchw: Optional[bool] = None
+        proto_spatial = (in_h // 4, in_w // 4)
+
+        for t in outputs:
+            arr = t[0] if (t.ndim == 4 and t.shape[0] == 1) else (
+                t if t.ndim == 3 else None
+            )
+            if arr is None or arr.ndim != 3:
+                continue
+            d0, d1, d2 = arr.shape
+            if d0 == 32 and (d1, d2) == proto_spatial:
+                proto = arr
+                layout_is_nchw = True
+                break
+            if d2 == 32 and (d0, d1) == proto_spatial:
+                proto = np.transpose(arr, (2, 0, 1))
+                layout_is_nchw = False
+                break
+
+        if proto is None or layout_is_nchw is None:
+            return np.zeros((0, 4)), np.array([]), np.array([]), []
+
+        # --- Pass 2: classify every tensor using the detected convention ---
+        for t in outputs:
+            arr = t[0] if (t.ndim == 4 and t.shape[0] == 1) else (
+                t if t.ndim == 3 else None
+            )
+            if arr is None or arr.ndim != 3:
+                continue
+            chw = arr if layout_is_nchw else np.transpose(arr, (2, 0, 1))
+            c, h, w = chw.shape
+            grid = h
+
+            # Skip the proto tensor we already captured.
+            if c == 32 and h == proto_spatial[0] and w == proto_spatial[1]:
+                continue
+            if c == 4:
+                scales.setdefault(grid, {})["box"] = chw
+            elif c == 32:
+                scales.setdefault(grid, {})["coeff"] = chw
+            else:
+                scales.setdefault(grid, {})["cls"] = chw
+
+        if not scales:
+            return np.zeros((0, 4)), np.array([]), np.array([]), []
+
+        all_boxes: list[np.ndarray] = []
+        all_scores: list[np.ndarray] = []
+        all_class_ids: list[np.ndarray] = []
+        all_coeffs: list[np.ndarray] = []
+
+        for grid, heads in scales.items():
+            if "box" not in heads or "cls" not in heads:
+                continue
+
+            stride = in_h // grid  # 8, 16, or 32
+            box = heads["box"]      # [4, grid, grid]
+            cls = heads["cls"]      # [nc, grid, grid]
+            coeff = heads.get("coeff")  # [32, grid, grid] or None
+            nc = cls.shape[0]
+
+            # Flatten spatial dims -> [N, ...]
+            box_flat = box.reshape(4, -1).T        # [N, 4]
+            cls_flat = cls.reshape(nc, -1).T       # [N, nc]
+            coeff_flat = (
+                coeff.reshape(32, -1).T if coeff is not None else None
+            )  # [N, 32]
+
+            # Grid cell centre coordinates (YOLOv8 uses offset 0.5).
+            rows = np.arange(grid)
+            cols = np.arange(grid)
+            col_grid, row_grid = np.meshgrid(cols, rows)
+            cx = (col_grid.reshape(-1) + 0.5) * stride
+            cy = (row_grid.reshape(-1) + 0.5) * stride
+
+            # dist2bbox: box channels are (left, top, right, bottom) distances
+            # in units of stride.
+            left, top, right, bottom = (
+                box_flat[:, 0], box_flat[:, 1],
+                box_flat[:, 2], box_flat[:, 3],
+            )
+            x1 = cx - left * stride
+            y1 = cy - top * stride
+            x2 = cx + right * stride
+            y2 = cy + bottom * stride
+            boxes = np.stack([x1, y1, x2, y2], axis=1).astype(np.float32)
+
+            # Sigmoid class logits -> confidence + class id.
+            scores = 1.0 / (1.0 + np.exp(-cls_flat.astype(np.float32)))
             confidences = scores.max(axis=1)
-        else:
-            class_ids = np.zeros(len(boxes), dtype=np.int32)
-            confidences = scores.flatten()
+            class_ids = scores.argmax(axis=1).astype(np.int32)
 
+            all_boxes.append(boxes)
+            all_scores.append(confidences)
+            all_class_ids.append(class_ids)
+            if coeff_flat is not None:
+                all_coeffs.append(coeff_flat)
+
+        if not all_boxes:
+            return np.zeros((0, 4)), np.array([]), np.array([]), []
+
+        boxes = np.concatenate(all_boxes, axis=0)
+        confidences = np.concatenate(all_scores, axis=0)
+        class_ids = np.concatenate(all_class_ids, axis=0)
+        coeffs = (
+            np.concatenate(all_coeffs, axis=0) if all_coeffs else None
+        )
+
+        # Confidence filter.
         keep = confidences >= conf_threshold
         boxes = boxes[keep]
         confidences = confidences[keep]
         class_ids = class_ids[keep]
-        masks = masks[keep] if len(masks) else []
+        if coeffs is not None:
+            coeffs = coeffs[keep]
 
+        if len(boxes) == 0:
+            return np.zeros((0, 4)), np.array([]), np.array([]), []
+
+        # Non-maximum suppression.
         nms_keep = HailoInferenceEngine._nms(boxes, confidences, nms_threshold)
         final_boxes = boxes[nms_keep]
         final_scores = confidences[nms_keep]
         final_class_ids = class_ids[nms_keep]
-        final_masks = [masks[i] for i in nms_keep] if len(masks) else []
+
+        # Generate per-instance masks: sigmoid(coeff @ proto).
+        final_masks: list[np.ndarray] = []
+        if coeffs is not None and proto is not None:
+            proto_h, proto_w = proto.shape[1], proto.shape[2]
+            proto_flat = proto.reshape(32, -1)  # [32, proto_h*proto_w]
+            for idx in nms_keep:
+                c = coeffs[idx]  # [32]
+                mask = 1.0 / (1.0 + np.exp(-(c @ proto_flat)))
+                final_masks.append(mask.reshape(proto_h, proto_w))
 
         return final_boxes, final_scores, final_class_ids, final_masks
 
