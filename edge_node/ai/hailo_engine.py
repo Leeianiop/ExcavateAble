@@ -103,6 +103,9 @@ class DepthResult:
 
 
 class HailoInferenceEngine:
+    # Class-level diagnostic flag (used in the static _yolov8_seg_decode).
+    _logged_conf_stats: bool = False
+
     def __init__(self, config: HailoConfig):
         self.config = config
         self._target = None  # VDevice (shared across models)
@@ -667,6 +670,7 @@ class HailoInferenceEngine:
         all_scores: list[np.ndarray] = []
         all_class_ids: list[np.ndarray] = []
         all_coeffs: list[np.ndarray] = []
+        cls_needs_sigmoid: bool | None = None  # auto-detected from first scale
 
         for grid, heads in scales.items():
             if "box" not in heads or "cls" not in heads:
@@ -719,7 +723,24 @@ class HailoInferenceEngine:
             boxes = np.stack([x1, y1, x2, y2], axis=1).astype(np.float32)
 
             # Sigmoid class logits -> confidence + class id.
-            scores = 1.0 / (1.0 + np.exp(-cls_flat.astype(np.float32)))
+            # Some Hailo-compiled models already apply sigmoid to the class
+            # head internally. We detect this from the value range: raw logits
+            # typically span [-5, +5] or more, while already-sigmoided values
+            # are strictly in [0, 1]. Double-sigmoiding would squash all
+            # scores to ~0.5-0.6 and make real detections invisible.
+            cls_f32 = cls_flat.astype(np.float32)
+            if cls_needs_sigmoid is None:
+                cls_max = float(cls_f32.max())
+                cls_min = float(cls_f32.min())
+                cls_needs_sigmoid = not (cls_min >= -0.05 and cls_max <= 1.05)
+                logger.info(
+                    f"  cls sigmoid: {'applied' if cls_needs_sigmoid else 'skipped (model already sigmoided)'} "
+                    f"(raw range=[{cls_min:.3f}, {cls_max:.3f}])"
+                )
+            if cls_needs_sigmoid:
+                scores = 1.0 / (1.0 + np.exp(-cls_f32))
+            else:
+                scores = np.clip(cls_f32, 0.0, 1.0)
             confidences = scores.max(axis=1)
             class_ids = scores.argmax(axis=1).astype(np.int32)
 
@@ -738,6 +759,20 @@ class HailoInferenceEngine:
         coeffs = (
             np.concatenate(all_coeffs, axis=0) if all_coeffs else None
         )
+
+        # Diagnostic: log confidence distribution on first frame so we can
+        # tell whether the model produces real detections or just noise.
+        if not HailoInferenceEngine._logged_conf_stats:
+            HailoInferenceEngine._logged_conf_stats = True
+            if len(confidences) > 0:
+                logger.info(
+                    f"  conf stats: n={len(confidences)} "
+                    f"min={confidences.min():.4f} "
+                    f"max={confidences.max():.4f} "
+                    f"mean={confidences.mean():.4f} "
+                    f">=0.5:{int((confidences >= 0.5).sum())} "
+                    f">=0.7:{int((confidences >= 0.7).sum())}"
+                )
 
         # Confidence filter.
         keep = confidences >= conf_threshold
