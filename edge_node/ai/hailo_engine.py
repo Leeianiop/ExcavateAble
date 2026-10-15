@@ -271,12 +271,13 @@ class HailoInferenceEngine:
         output_vstreams_params = OutputVStreamParams.make(
             network_group, quantized=False, format_type=FormatType.FLOAT32
         )
-        # HailoRT >=4.x: activate() returns a context manager. InferVStreams
-        # expects the context manager (ActivatedNetworkGroup), not the entered
-        # ActivatedNetwork, so we pass the context manager directly.
+        # HailoRT 4.x: activate() returns a context manager that must be
+        # entered before creating InferVStreams. InferVStreams takes the
+        # CONFIGURED network group (network_group), not the activated context.
         activated_ctx = network_group.activate()
+        activated_ctx.__enter__()
         infer = InferVStreams(
-            activated_ctx, input_vstreams_params, output_vstreams_params
+            network_group, input_vstreams_params, output_vstreams_params
         )
 
         self._seg_hef = hef
@@ -372,8 +373,9 @@ class HailoInferenceEngine:
             network_group, quantized=False, format_type=FormatType.FLOAT32
         )
         activated_ctx = network_group.activate()
+        activated_ctx.__enter__()
         infer = InferVStreams(
-            activated_ctx, input_vstreams_params, output_vstreams_params
+            network_group, input_vstreams_params, output_vstreams_params
         )
 
         self._depth_hef = hef
@@ -474,14 +476,20 @@ class HailoInferenceEngine:
     # Helpers
     # ------------------------------------------------------------------
     def _cleanup(self) -> None:
+        # Close InferVStreams (HailoRT 4.x uses __exit__; some versions also
+        # expose close()). Try both defensively.
         for attr in ("_seg_infer", "_depth_infer"):
             obj = getattr(self, attr, None)
             if obj is not None:
                 try:
-                    obj.close()
+                    obj.__exit__(None, None, None)
                 except Exception:
-                    pass
+                    try:
+                        obj.close()
+                    except Exception:
+                        pass
                 setattr(self, attr, None)
+        # Exit activation context managers (paired with __enter__ in _load_*)
         for attr in ("_seg_activated_ctx", "_depth_activated_ctx"):
             obj = getattr(self, attr, None)
             if obj is not None:
@@ -494,12 +502,9 @@ class HailoInferenceEngine:
             obj = getattr(self, attr, None)
             if obj is not None:
                 setattr(self, attr, None)
-        if self._target is not None:
-            try:
-                self._target.close()
-            except Exception:
-                pass
-            self._target = None
+        # VDevice in HailoRT 4.x has no close() — release reference so the
+        # device is freed when the object is garbage collected.
+        self._target = None
         self._initialized_models.clear()
 
     @staticmethod
