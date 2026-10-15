@@ -111,18 +111,23 @@ class HailoInferenceEngine:
         """Resolve a model path. Relative paths are searched in:
         1. current working directory
         2. edge_node package directory (edge_node/<path>)
+        Also tries swapping '-' and '_' in the filename for robustness.
         """
+        candidates: list[Path] = []
         p = Path(model_path)
-        if p.is_absolute() and p.exists():
-            return p
-        # Try relative to CWD first
-        if p.exists():
-            return p
-        # Fallback: try relative to the edge_node package directory
+        candidates.append(p)
+        # Try swapping - and _ in the filename
+        alt_name = p.name.replace("-", "_") if "-" in p.name else p.name.replace("_", "-")
+        if alt_name != p.name:
+            candidates.append(p.with_name(alt_name))
+
         edge_root = Path(__file__).resolve().parent.parent  # edge_node/
-        alt = edge_root / p
-        if alt.exists():
-            return alt
+        for c in list(candidates):
+            candidates.append(edge_root / c)
+
+        for c in candidates:
+            if c.exists():
+                return c
         return p  # return original so error message shows the expected path
 
     @property
@@ -266,13 +271,18 @@ class HailoInferenceEngine:
         output_vstreams_params = OutputVStreamParams.make(
             network_group, quantized=False, format_type=FormatType.FLOAT32
         )
-        activated = network_group.activate()
+        # HailoRT >=4.x: activate() returns a context manager; enter it to get
+        # the actual activated network. We keep the context manager reference
+        # so we can exit it cleanly during cleanup.
+        activated_ctx = network_group.activate()
+        activated = activated_ctx.__enter__()
         infer = InferVStreams(
             activated, input_vstreams_params, output_vstreams_params
         )
 
         self._seg_hef = hef
         self._seg_network_group = network_group
+        self._seg_activated_ctx = activated_ctx
         self._seg_activated = activated
         self._seg_infer = infer
         self._initialized_models.add("segmentation")
@@ -363,13 +373,15 @@ class HailoInferenceEngine:
         output_vstreams_params = OutputVStreamParams.make(
             network_group, quantized=False, format_type=FormatType.FLOAT32
         )
-        activated = network_group.activate()
+        activated_ctx = network_group.activate()
+        activated = activated_ctx.__enter__()
         infer = InferVStreams(
             activated, input_vstreams_params, output_vstreams_params
         )
 
         self._depth_hef = hef
         self._depth_network_group = network_group
+        self._depth_activated_ctx = activated_ctx
         self._depth_activated = activated
         self._depth_infer = infer
         self._initialized_models.add("depth")
@@ -471,6 +483,15 @@ class HailoInferenceEngine:
             if obj is not None:
                 try:
                     obj.close()
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+        # Exit the activate() context managers (HailoRT >=4.x returns a context manager)
+        for attr in ("_seg_activated_ctx", "_depth_activated_ctx"):
+            obj = getattr(self, attr, None)
+            if obj is not None:
+                try:
+                    obj.__exit__(None, None, None)
                 except Exception:
                     pass
                 setattr(self, attr, None)
