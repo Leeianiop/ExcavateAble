@@ -318,6 +318,9 @@ class HailoInferenceEngine:
         infer = InferVStreams(
             network_group, input_vstreams_params, output_vstreams_params
         )
+        # InferVStreams is a context manager; __enter__() sets up the
+        # internal _infer_pipeline required by infer().
+        infer.__enter__()
 
         self._seg_hef = hef
         self._seg_network_group = network_group
@@ -419,6 +422,7 @@ class HailoInferenceEngine:
         infer = InferVStreams(
             network_group, input_vstreams_params, output_vstreams_params
         )
+        infer.__enter__()
 
         self._depth_hef = hef
         self._depth_network_group = network_group
