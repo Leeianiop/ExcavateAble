@@ -15,7 +15,7 @@ capture:
   jpeg_quality: 95
 
 hailo:
-  segmentation_model_path: "./models/yolov8n-seg.hef"
+  segmentation_model_path: "./models/yolov8n_seg.hef"
   depth_model_path: "./models/dpt_lite.hef"
   input_width: 640
   input_height: 640
