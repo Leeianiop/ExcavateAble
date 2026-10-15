@@ -380,6 +380,13 @@ class HailoInferenceEngine:
             nms_threshold=self.config.nms_threshold,
         )
 
+        if not self._logged_seg_shapes:
+            # Already logged shapes above; now log detection stats.
+            logger.info(
+                f"  seg decode: {len(boxes)} boxes kept "
+                f"(threshold={self.config.threshold}, nms={self.config.nms_threshold})"
+            )
+
         if len(masks) == 0:
             seg_mask = np.zeros(original_shape, dtype=np.uint8)
         else:
@@ -739,6 +746,23 @@ class HailoInferenceEngine:
         class_ids = class_ids[keep]
         if coeffs is not None:
             coeffs = coeffs[keep]
+
+        if len(boxes) == 0:
+            return np.zeros((0, 4)), np.array([]), np.array([]), []
+
+        # Min box size filter: discard tiny boxes that are almost certainly
+        # noise (a real object can't be fewer than 5 pixels on a side at
+        # 640x640 input resolution).
+        min_size = 5.0
+        sizes_ok = (
+            (boxes[:, 2] - boxes[:, 0] >= min_size) &
+            (boxes[:, 3] - boxes[:, 1] >= min_size)
+        )
+        boxes = boxes[sizes_ok]
+        confidences = confidences[sizes_ok]
+        class_ids = class_ids[sizes_ok]
+        if coeffs is not None:
+            coeffs = coeffs[sizes_ok]
 
         if len(boxes) == 0:
             return np.zeros((0, 4)), np.array([]), np.array([]), []

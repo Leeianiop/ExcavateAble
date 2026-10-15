@@ -21,8 +21,8 @@ hailo:
   input_height: 640
   depth_input_width: 320
   depth_input_height: 256
-  threshold: 0.5
-  nms_threshold: 0.45
+  threshold: 0.7
+  nms_threshold: 0.35
   device_id: 0
 
 upload:
