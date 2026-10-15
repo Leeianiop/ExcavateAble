@@ -249,6 +249,18 @@ def cmd_live_stream(args: argparse.Namespace) -> int:
     if args.backend:
         config.upload.backend_url = args.backend
 
+    # Override capture resolution for live stream. The default 4056x3040
+    # (12MP) is far larger than the 640x640 model input and makes every
+    # frame (resize + JPEG encode) very slow on the Pi. 1280x720 is plenty
+    # for the digital-twin preview.
+    if getattr(args, "resolution", None):
+        try:
+            rw, rh = (int(v) for v in args.resolution.lower().split("x"))
+            config.capture.width = rw
+            config.capture.height = rh
+        except (ValueError, AttributeError):
+            print(f"[warn] invalid --resolution '{args.resolution}', using default")
+
     from .capture import CameraCapture
     from .ai import HailoInferenceEngine
     from .pipeline import BackendUploadClient
@@ -276,15 +288,19 @@ def cmd_live_stream(args: argparse.Namespace) -> int:
             while True:
                 t_frame = time.perf_counter()
 
+                t0 = time.perf_counter()
                 shot = cam.capture_single(shot_index)
                 shot_index += 1
                 rgb = shot.rgb_array
+                t_cap = (time.perf_counter() - t0) * 1000
                 if rgb is None:
                     print("[skip] capture returned None")
                     time.sleep(interval)
                     continue
 
+                t1 = time.perf_counter()
                 seg, depth = ai.run_fused_pipeline(rgb)
+                t_infer = (time.perf_counter() - t1) * 1000
 
                 detections = []
                 boxes = seg.boxes_xyxy
@@ -312,7 +328,9 @@ def cmd_live_stream(args: argparse.Namespace) -> int:
                 d_max = float(depth_map.max()) if depth_map is not None else 0.0
                 d_mean = float(depth_map.mean()) if depth_map is not None else 0.0
 
+                t2 = time.perf_counter()
                 jpeg_bytes, fw, fh = _encode_jpeg(rgb)
+                t_encode = (time.perf_counter() - t2) * 1000
 
                 metadata = {
                     "width": fw,
@@ -323,6 +341,7 @@ def cmd_live_stream(args: argparse.Namespace) -> int:
                     "depth_mean": round(d_mean, 4),
                 }
 
+                t3 = time.perf_counter()
                 try:
                     resp = client._session.post(
                         f"{backend_url}/api/v1/live/frame",
@@ -330,14 +349,18 @@ def cmd_live_stream(args: argparse.Namespace) -> int:
                         data={"metadata": _json_dumps(metadata)},
                         timeout=5.0,
                     )
+                    t_upload = (time.perf_counter() - t3) * 1000
                     if resp.status_code != 200:
                         print(f"[warn] POST live frame: HTTP {resp.status_code}")
                     else:
                         frame_count += 1
                         elapsed = (time.perf_counter() - t_frame) * 1000
                         det_str = f"{len(detections)} det" if detections else "no det"
-                        print(f"  frame #{frame_count}  {w}x{h}  {det_str}  "
-                              f"depth=[{d_min:.2f},{d_max:.2f}]  {elapsed:.0f}ms")
+                        print(
+                            f"  frame #{frame_count}  {w}x{h}  {det_str}  "
+                            f"[{t_cap:.0f}cap {t_infer:.0f}inf {t_encode:.0f}enc {t_upload:.0f}up]  "
+                            f"{elapsed:.0f}ms total"
+                        )
                 except Exception as exc:
                     print(f"[warn] upload failed: {exc}")
 
@@ -389,6 +412,8 @@ def build_parser() -> argparse.ArgumentParser:
     ls = sub.add_parser("live-stream", help="Live stream: capture+AI-infer+push frames every second (digital twin)")
     ls.add_argument("--interval", "-i", type=float, default=None, help="Seconds between frames (default: 1.0)")
     ls.add_argument("--backend", "-b", type=str, default=None, help="Override backend URL")
+    ls.add_argument("--resolution", "-r", type=str, default="1280x720",
+                     help="Capture resolution WxH for live stream (default: 1280x720)")
     ls.set_defaults(func=cmd_live_stream)
 
     return p

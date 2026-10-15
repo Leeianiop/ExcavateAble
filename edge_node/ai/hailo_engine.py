@@ -348,7 +348,8 @@ class HailoInferenceEngine:
         padded[pad_h:pad_h + new_h, pad_w:pad_w + new_w] = resized
 
         tensor = padded.astype(np.float32) / 255.0
-        return np.transpose(tensor, (2, 0, 1))[np.newaxis, ...]
+        # Hailo requires C-contiguous NCHW float32 input.
+        return np.ascontiguousarray(np.transpose(tensor, (2, 0, 1))[np.newaxis, ...])
 
     def _infer_segmentation(self, tensor: np.ndarray) -> dict:
         input_name = self._seg_hef.get_input_vstream_infos()[0].name
@@ -445,7 +446,7 @@ class HailoInferenceEngine:
             resized = self._numpy_resize(rgb, h, w)
         # SCDepthV3 / fast_depth expect simple [0,1] normalization (no ImageNet mean/std)
         tensor = resized.astype(np.float32) / 255.0
-        return np.transpose(tensor, (2, 0, 1))[np.newaxis, ...]
+        return np.ascontiguousarray(np.transpose(tensor, (2, 0, 1))[np.newaxis, ...])
 
     def _infer_depth(self, tensor: np.ndarray) -> dict:
         input_name = self._depth_hef.get_input_vstream_infos()[0].name
@@ -741,6 +742,18 @@ class HailoInferenceEngine:
 
         if len(boxes) == 0:
             return np.zeros((0, 4)), np.array([]), np.array([]), []
+
+        # Limit to top-K highest-confidence detections before NMS to avoid
+        # pathological O(n^2) slowdown when thousands of boxes pass the
+        # confidence threshold.
+        top_k = 1000
+        if len(boxes) > top_k:
+            top_idx = np.argpartition(confidences, -top_k)[-top_k:]
+            boxes = boxes[top_idx]
+            confidences = confidences[top_idx]
+            class_ids = class_ids[top_idx]
+            if coeffs is not None:
+                coeffs = coeffs[top_idx]
 
         # Non-maximum suppression.
         nms_keep = HailoInferenceEngine._nms(boxes, confidences, nms_threshold)
