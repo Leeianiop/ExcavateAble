@@ -23,7 +23,6 @@ backend/job_state.json
 # Edge node captures & logs
 edge_node/captures/
 edge_node/logs/
-edge_node/models/*.hef
 
 # Node / frontend
 node_modules/
