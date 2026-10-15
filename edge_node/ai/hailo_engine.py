@@ -271,19 +271,17 @@ class HailoInferenceEngine:
         output_vstreams_params = OutputVStreamParams.make(
             network_group, quantized=False, format_type=FormatType.FLOAT32
         )
-        # HailoRT >=4.x: activate() returns a context manager; enter it to get
-        # the actual activated network. We keep the context manager reference
-        # so we can exit it cleanly during cleanup.
+        # HailoRT >=4.x: activate() returns a context manager. InferVStreams
+        # expects the context manager (ActivatedNetworkGroup), not the entered
+        # ActivatedNetwork, so we pass the context manager directly.
         activated_ctx = network_group.activate()
-        activated = activated_ctx.__enter__()
         infer = InferVStreams(
-            activated, input_vstreams_params, output_vstreams_params
+            activated_ctx, input_vstreams_params, output_vstreams_params
         )
 
         self._seg_hef = hef
         self._seg_network_group = network_group
         self._seg_activated_ctx = activated_ctx
-        self._seg_activated = activated
         self._seg_infer = infer
         self._initialized_models.add("segmentation")
         logger.info(f"Segmentation model loaded: {hef_path.name}")
@@ -374,15 +372,13 @@ class HailoInferenceEngine:
             network_group, quantized=False, format_type=FormatType.FLOAT32
         )
         activated_ctx = network_group.activate()
-        activated = activated_ctx.__enter__()
         infer = InferVStreams(
-            activated, input_vstreams_params, output_vstreams_params
+            activated_ctx, input_vstreams_params, output_vstreams_params
         )
 
         self._depth_hef = hef
         self._depth_network_group = network_group
         self._depth_activated_ctx = activated_ctx
-        self._depth_activated = activated
         self._depth_infer = infer
         self._initialized_models.add("depth")
         logger.info(f"Depth model loaded: {hef_path.name}")
@@ -486,20 +482,11 @@ class HailoInferenceEngine:
                 except Exception:
                     pass
                 setattr(self, attr, None)
-        # Exit the activate() context managers (HailoRT >=4.x returns a context manager)
         for attr in ("_seg_activated_ctx", "_depth_activated_ctx"):
             obj = getattr(self, attr, None)
             if obj is not None:
                 try:
                     obj.__exit__(None, None, None)
-                except Exception:
-                    pass
-                setattr(self, attr, None)
-        for attr in ("_seg_activated", "_depth_activated"):
-            obj = getattr(self, attr, None)
-            if obj is not None:
-                try:
-                    obj.close()
                 except Exception:
                     pass
                 setattr(self, attr, None)
