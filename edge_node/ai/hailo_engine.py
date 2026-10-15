@@ -583,16 +583,16 @@ class HailoInferenceEngine:
         """Decode YOLOv8-seg raw feature maps.
 
         The Hailo YOLOv8-seg HEF does **not** output pre-decoded boxes/scores.
-        Instead it emits 10 raw tensors:
+        Instead it emits 10 raw tensors (NHWC layout observed on Hailo):
           - 3 detection scales (P3/P4/P5), each with 3 heads:
-              * box   : 4 channels  (dist2bbox distances: left, top, right, bottom)
+              * box   : 64 channels (DFL: 4 sides x 16 bins, reg_max=16)
               * cls   : nc channels (class logits, requires sigmoid)
               * coeff : 32 channels (mask coefficients)
           - 1 mask prototype : 32 channels at P2 resolution (in/4)
 
-        This function classifies each tensor by shape, applies dist2bbox,
-        sigmoid, confidence filtering, NMS, and generates per-instance masks
-        from coefficients x prototype.
+        This function classifies each tensor by shape, applies DFL decoding,
+        dist2bbox, sigmoid, confidence filtering, NMS, and generates
+        per-instance masks from coefficients x prototype.
         """
         if not outputs:
             return np.zeros((0, 4)), np.array([]), np.array([]), []
@@ -643,7 +643,9 @@ class HailoInferenceEngine:
             # Skip the proto tensor we already captured.
             if c == 32 and h == proto_spatial[0] and w == proto_spatial[1]:
                 continue
-            if c == 4:
+            # Box head: 4 channels (post-DFL) or 4*reg_max=64 channels (raw DFL,
+            # reg_max=16). Coeff head: 32 channels. Everything else is cls.
+            if c in (4, 64):
                 scales.setdefault(grid, {})["box"] = chw
             elif c == 32:
                 scales.setdefault(grid, {})["coeff"] = chw
@@ -663,17 +665,31 @@ class HailoInferenceEngine:
                 continue
 
             stride = in_h // grid  # 8, 16, or 32
-            box = heads["box"]      # [4, grid, grid]
+            box = heads["box"]      # [4 or 64, grid, grid]
             cls = heads["cls"]      # [nc, grid, grid]
             coeff = heads.get("coeff")  # [32, grid, grid] or None
             nc = cls.shape[0]
+            box_ch = box.shape[0]
 
             # Flatten spatial dims -> [N, ...]
-            box_flat = box.reshape(4, -1).T        # [N, 4]
-            cls_flat = cls.reshape(nc, -1).T       # [N, nc]
+            box_flat = box.reshape(box_ch, -1).T    # [N, 4 or 64]
+            cls_flat = cls.reshape(nc, -1).T        # [N, nc]
             coeff_flat = (
                 coeff.reshape(32, -1).T if coeff is not None else None
             )  # [N, 32]
+
+            # DFL (Distribution Focal Loss) decoding.
+            # YOLOv8 box head may output 4*reg_max channels (reg_max=16 -> 64).
+            # Reshape to [N, 4, 16], softmax over bins, weighted sum with
+            # [0..15] to recover the 4 distance values.
+            if box_ch == 64:
+                dfl = box_flat.reshape(-1, 4, 16).astype(np.float32)
+                # Numerically stable softmax over the 16-bin axis.
+                dfl = dfl - dfl.max(axis=2, keepdims=True)
+                dfl = np.exp(dfl)
+                dfl = dfl / dfl.sum(axis=2, keepdims=True)
+                weights = np.arange(16, dtype=np.float32)
+                box_flat = (dfl * weights).sum(axis=2)  # [N, 4]
 
             # Grid cell centre coordinates (YOLOv8 uses offset 0.5).
             rows = np.arange(grid)
