@@ -271,17 +271,23 @@ def cmd_live_stream(args: argparse.Namespace) -> int:
     if args.backend:
         config.upload.backend_url = args.backend
 
-    # Override capture resolution for live stream. The default 4056x3040
-    # (12MP) is far larger than the 640x640 model input and makes every
-    # frame (resize + JPEG encode) very slow on the Pi. 1280x720 is plenty
-    # for the digital-twin preview.
-    if getattr(args, "resolution", None):
+    # Live stream uses a low-power resolution (default 1280x720) instead of
+    # the full still resolution. Capturing at e.g. 4056x3040 (12MP) is far
+    # larger than the 640x640 model input and makes every frame slow on the
+    # Pi. --resolution overrides the config value.
+    res = getattr(args, "resolution", None)
+    if res:
         try:
-            rw, rh = (int(v) for v in args.resolution.lower().split("x"))
+            rw, rh = (int(v) for v in res.lower().split("x"))
             config.capture.width = rw
             config.capture.height = rh
         except (ValueError, AttributeError):
-            print(f"[warn] invalid --resolution '{args.resolution}', using default")
+            print(f"[warn] invalid --resolution '{res}', using config value")
+    else:
+        config.capture.width = config.capture.live_stream_width
+        config.capture.height = config.capture.live_stream_height
+    # RAW frames are never used by the live preview and cost extra ISP/bandwidth.
+    config.capture.save_raw = config.capture.live_stream_save_raw
 
     from .capture import CameraCapture
     from .ai import HailoInferenceEngine
@@ -434,8 +440,8 @@ def build_parser() -> argparse.ArgumentParser:
     ls = sub.add_parser("live-stream", help="Live stream: capture+AI-infer+push frames every second (digital twin)")
     ls.add_argument("--interval", "-i", type=float, default=None, help="Seconds between frames (default: 1.0)")
     ls.add_argument("--backend", "-b", type=str, default=None, help="Override backend URL")
-    ls.add_argument("--resolution", "-r", type=str, default="1280x720",
-                     help="Capture resolution WxH for live stream (default: 1280x720)")
+    ls.add_argument("--resolution", "-r", type=str, default=None,
+                     help="Capture resolution WxH for live stream (default: config live_stream_width x live_stream_height, 1280x720)")
     ls.set_defaults(func=cmd_live_stream)
 
     return p

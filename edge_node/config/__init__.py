@@ -27,6 +27,12 @@ class CaptureConfig:
     save_raw: bool = True
     save_jpeg: bool = True
     jpeg_quality: int = 95
+    # Low-power overrides used by the continuous `live-stream` mode. Capturing
+    # at the full still resolution (e.g. 4056x3040) is far larger than the
+    # 640x640 model input and makes every frame slow on the Pi.
+    live_stream_width: int = 1280
+    live_stream_height: int = 720
+    live_stream_save_raw: bool = False
 
 
 @dataclass

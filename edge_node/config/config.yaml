@@ -13,6 +13,11 @@ capture:
   save_raw: true
   save_jpeg: true
   jpeg_quality: 95
+  # Low-power resolution used only by `live-stream` (preview). The still
+  # capture above keeps the full 4056x3040 for photogrammetry.
+  live_stream_width: 1280
+  live_stream_height: 720
+  live_stream_save_raw: false
 
 hailo:
   segmentation_model_path: "./models/yolov8n_seg.hef"
