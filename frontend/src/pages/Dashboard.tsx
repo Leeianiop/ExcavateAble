@@ -35,7 +35,7 @@ export const Dashboard: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const stored = localStorage.getItem("snakebot_seen_jobs");
+    const stored = localStorage.getItem("excavatable_seen_jobs");
     const seenIds: string[] = stored ? JSON.parse(stored) : [];
     (async () => {
       const jobs: JobResponse[] = [];
@@ -52,11 +52,11 @@ export const Dashboard: React.FC = () => {
   }, []);
 
   const addSeenJob = (jobId: string) => {
-    const stored = localStorage.getItem("snakebot_seen_jobs");
+    const stored = localStorage.getItem("excavatable_seen_jobs");
     const seenIds: string[] = stored ? JSON.parse(stored) : [];
     if (!seenIds.includes(jobId)) {
       seenIds.push(jobId);
-      localStorage.setItem("snakebot_seen_jobs", JSON.stringify(seenIds));
+      localStorage.setItem("excavatable_seen_jobs", JSON.stringify(seenIds));
     }
   };
 
@@ -183,7 +183,7 @@ export const Dashboard: React.FC = () => {
             <button
               className="btn btn-ghost"
               onClick={() => {
-                localStorage.removeItem("snakebot_seen_jobs");
+                localStorage.removeItem("excavatable_seen_jobs");
                 setRecentJobs([]);
               }}
             >

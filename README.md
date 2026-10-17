@@ -1,4 +1,4 @@
-# SnakeBot — 3D Scanning System
+# Excavatable — 3D Scanning System
 
 Photogrammetry-based 3D scanning pipeline. A Raspberry Pi captures photos + AI masks, a backend reconstructs a 3D mesh, and a web viewer renders it in the browser.
 

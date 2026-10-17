@@ -26,7 +26,7 @@ export const AssetLibrary: React.FC = () => {
 
         await getHealth();
 
-        const seen = localStorage.getItem("snakebot_seen_jobs");
+        const seen = localStorage.getItem("excavatable_seen_jobs");
         const seenIds: string[] = seen ? JSON.parse(seen) : [];
 
         const assetMap = new Map<string, AssetGroup>();

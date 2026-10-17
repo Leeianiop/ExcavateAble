@@ -26,7 +26,7 @@ export const Navbar: React.FC = () => {
             </svg>
           </div>
           <div>
-            <div className="brand-title">SnakeBot</div>
+            <div className="brand-title">Excavatable</div>
             <div className="brand-subtitle">3D Scanning System</div>
           </div>
         </NavLink>

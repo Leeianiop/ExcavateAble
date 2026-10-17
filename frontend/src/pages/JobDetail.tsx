@@ -19,11 +19,11 @@ export const JobDetail: React.FC = () => {
       setError(null);
       const data = await getJob(jobId);
       setJob(data);
-      const stored = localStorage.getItem("snakebot_seen_jobs");
+      const stored = localStorage.getItem("excavatable_seen_jobs");
       const seenIds: string[] = stored ? JSON.parse(stored) : [];
       if (!seenIds.includes(jobId)) {
         seenIds.push(jobId);
-        localStorage.setItem("snakebot_seen_jobs", JSON.stringify(seenIds));
+        localStorage.setItem("excavatable_seen_jobs", JSON.stringify(seenIds));
       }
     } catch (err: any) {
       setError(err?.response?.data?.detail ?? err?.message ?? "Failed to load job");
