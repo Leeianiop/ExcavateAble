@@ -200,6 +200,9 @@ export const Dashboard: React.FC = () => {
                 Look up a Job ID above, or run <code>capture-and-upload</code>{" "}
                 from the edge node to create one.
               </p>
+              <Link to="/viewer/demo?format=demo" className="btn btn-primary">
+                Open Demo Map
+              </Link>
             </div>
           ) : (
             <div className="table-wrap">

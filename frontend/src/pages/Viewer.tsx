@@ -9,7 +9,9 @@ import type { JobResponse } from "../types";
 export const Viewer: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const format = (searchParams.get("format") as "glb" | "ply") ?? "glb";
+  const isDemoViewer = jobId === "demo";
+  const format = (searchParams.get("format") as "glb" | "ply" | "demo") ??
+    (isDemoViewer ? "demo" : "glb");
 
   const [job, setJob] = useState<JobResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -17,6 +19,7 @@ export const Viewer: React.FC = () => {
   const [showGrid, setShowGrid] = useState(true);
 
   useEffect(() => {
+    if (isDemoViewer) return;
     if (!jobId) return;
     (async () => {
       try {
@@ -26,11 +29,68 @@ export const Viewer: React.FC = () => {
         setError(err?.message ?? "Failed to load job");
       }
     })();
-  }, [jobId]);
+  }, [isDemoViewer, jobId]);
 
-  const switchFormat = (f: "glb" | "ply") => {
+  const switchFormat = (f: "glb" | "ply" | "demo") => {
     setSearchParams({ format: f });
   };
+
+  if (isDemoViewer) {
+    return (
+      <div className="viewer-page">
+        <div className="viewer-header">
+          <div>
+            <Link to="/assets" className="back-link">
+              ← Back to Assets
+            </Link>
+            <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginTop: "0.5rem" }}>
+              <h1 className="viewer-title">Excavation Demo Map</h1>
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: "0.25rem 0.6rem",
+                  borderRadius: "999px",
+                  background: "#ecfdf5",
+                  color: "#047857",
+                  fontSize: "0.8rem",
+                  fontWeight: 700,
+                }}
+              >
+                Demo
+              </span>
+            </div>
+            <p style={{ margin: "0.25rem 0 0 0", color: "#64748b", fontSize: "0.875rem" }}>
+              Built-in fallback scene based on your excavation layout photos.
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <button
+              className={`tool-btn ${autoRotate ? "active" : ""}`}
+              onClick={() => setAutoRotate((v) => !v)}
+            >
+              ⟳ Auto-Rotate
+            </button>
+            <button
+              className={`tool-btn ${showGrid ? "active" : ""}`}
+              onClick={() => setShowGrid((v) => !v)}
+            >
+              ⊞ Grid
+            </button>
+          </div>
+        </div>
+
+        <div className="viewer-body">
+          <Viewer3D
+            src="demo:excavation-layout"
+            format="demo"
+            autoRotate={autoRotate}
+            showGrid={showGrid}
+          />
+        </div>
+      </div>
+    );
+  }
 
   if (error) {
     return (
@@ -57,7 +117,8 @@ export const Viewer: React.FC = () => {
     );
   }
 
-  const assetUrl = format === "glb" ? getGlbUrl(job.job_id) : getPlyUrl(job.job_id);
+  const viewerFormat: "glb" | "ply" = format === "ply" ? "ply" : "glb";
+  const assetUrl = viewerFormat === "ply" ? getPlyUrl(job.job_id) : getGlbUrl(job.job_id);
   const hasBoth = !!job.glb_url && !!job.ply_url;
 
   return (
@@ -83,14 +144,14 @@ export const Viewer: React.FC = () => {
           {hasBoth && (
             <div className="segmented-control" role="tablist">
               <button
-                className={`seg-btn ${format === "glb" ? "active" : ""}`}
+                className={`seg-btn ${viewerFormat === "glb" ? "active" : ""}`}
                 onClick={() => switchFormat("glb")}
                 disabled={!job.glb_url}
               >
                 GLB
               </button>
               <button
-                className={`seg-btn ${format === "ply" ? "active" : ""}`}
+                className={`seg-btn ${viewerFormat === "ply" ? "active" : ""}`}
                 onClick={() => switchFormat("ply")}
                 disabled={!job.ply_url}
               >
@@ -142,7 +203,7 @@ export const Viewer: React.FC = () => {
         ) : (
           <Viewer3D
             src={assetUrl}
-            format={format}
+            format={viewerFormat}
             autoRotate={autoRotate}
             showGrid={showGrid}
           />

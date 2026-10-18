@@ -8,6 +8,8 @@ Edge Node (Pi 5 + Camera + Hailo-8L)  →  Backend (FastAPI + COLMAP/OpenMVS)  �
 
 Every part has a **mock fallback**, so you can run the whole pipeline on a plain laptop with **no hardware** and **no 3D binaries**.
 
+> Product name: **Excavatable**. The repo folder path is still `SnakeBot/`, so the commands below keep that filesystem path.
+
 ---
 
 ## Project Layout
@@ -34,6 +36,35 @@ SnakeBot/
 | Docker      | 24      | Backend (easiest path) |
 
 > Don't have Docker? You can run the backend locally too (see below).
+
+---
+
+## Actual Commands In This Repo
+
+### Frontend npm scripts
+
+Run these from `frontend/`:
+
+```bash
+npm run dev
+npm run build
+npm run preview
+npm run lint
+```
+
+### Edge node CLI commands
+
+Run these from the repo root:
+
+```bash
+python -m edge_node health-check
+python -m edge_node verify-hailo
+python -m edge_node capture --shots 20 --interval 1.2
+python -m edge_node capture-and-upload --shots 20 --interval 1.5 --wait
+python -m edge_node live-stream --interval 1.5 --resolution 1280x720
+```
+
+`python -m edge_node` is the real package entrypoint. `python -m edge_node.main` also works, but the package entrypoint is the cleaner command.
 
 ---
 
@@ -101,7 +132,9 @@ npm install
 npm run dev
 ```
 
-Open **http://localhost:5173** in your browser. You should see the Dashboard with a green **"API Healthy"** pill (if the backend is running).
+Open **http://localhost:5173** in your browser. You should see the Dashboard with a green **"Backend Connected"** status pill (if the backend is running).
+
+Even with no completed scans yet, the site now includes a built-in **Demo Map** at `/viewer/demo?format=demo` so you always have a fake excavation scene to show.
 
 To build for production:
 
@@ -195,6 +228,8 @@ The big banner prints the `job_id`. Paste it into **http://localhost:5173** → 
 
 > You also need Hailo `.hef` model files in `edge_node/models/` (download `yolov8n-seg.hef` + `dpt_lite.hef` from the [Hailo Model Zoo](https://github.com/hailo-ai/hailo_model_zoo)). Without them, the AI inference falls back to mock masks/depth.
 
+> For demos where the real model does not recognize your custom artifact class, the edge node now includes a fallback **heuristic artifact detector** that labels large, dark, close objects as `artifact`. This is meant for showcasing the workflow, not as a real trained detector.
+
 ---
 
 ## Default URLs & Credentials
@@ -214,7 +249,7 @@ The big banner prints the `job_id`. Paste it into **http://localhost:5173** → 
 1. **Edge node** captures RGB photos, runs Hailo-8L segmentation + depth, builds a manifest.
 2. **Upload** is 3-phase: `POST /bundles/init` → `PUT` each shot's 5 files → `POST /bundles/finalize` (with SHA-256 manifest check).
 3. **Backend** queues a 9-stage Celery job: download → background-strip → COLMAP sparse → COLMAP dense → OpenMVS fusion → mesh post-process → export PLY → export GLB → upload assets.
-4. **Frontend** polls `GET /jobs/{id}` every 2s, shows a progress timeline, and streams the GLB/PLY into a WebGL viewer (OrbitControls, auto-rotate, format toggle).
+4. **Frontend** polls `GET /jobs/{id}` every 2s, shows a progress timeline, and streams the GLB/PLY into a WebGL viewer (OrbitControls, auto-rotate, format toggle). It also includes a built-in fake **Demo Map** viewer for presentations.
 
 ---
 

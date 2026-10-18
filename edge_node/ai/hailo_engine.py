@@ -200,6 +200,17 @@ class HailoInferenceEngine:
         mask, class_ids, scores, boxes = self._postprocess_seg(raw_output, rgb_image.shape[:2])
         t_post = (time.perf_counter() - t2) * 1000
 
+        if len(class_ids) == 0 or not np.any(mask):
+            h_mask, h_class_ids, h_scores, h_boxes = self._heuristic_artifact_segmentation(
+                rgb_image
+            )
+            if len(h_class_ids) > 0:
+                logger.info(
+                    "Segmentation fallback used heuristic artifact detection: "
+                    f"{len(h_class_ids)} object(s)"
+                )
+                mask, class_ids, scores, boxes = h_mask, h_class_ids, h_scores, h_boxes
+
         stats = InferenceStats(
             preprocess_ms=t_pre,
             infer_ms=t_infer,
@@ -493,13 +504,27 @@ class HailoInferenceEngine:
         self, rgb: np.ndarray, t_start: float
     ) -> SegmentationResult:
         time.sleep(0.02)
-        h, w = rgb.shape[:2]
-        rng = np.random.default_rng(h * w % (2**16))
-        yy, xx = np.ogrid[:h, :w]
-        cx, cy = w * 0.5 + rng.uniform(-w * 0.1, w * 0.1), h * 0.5 + rng.uniform(-h * 0.1, h * 0.1)
-        rx, ry = w * 0.35, h * 0.35
-        ellipse = ((xx - cx) ** 2) / rx**2 + ((yy - cy) ** 2) / ry**2
-        mask = (ellipse <= 1.0).astype(np.uint8)
+        h_mask, h_class_ids, h_scores, h_boxes = self._heuristic_artifact_segmentation(rgb)
+        if len(h_class_ids) > 0:
+            mask = h_mask
+            class_ids = h_class_ids
+            scores = h_scores
+            boxes = h_boxes
+        else:
+            h, w = rgb.shape[:2]
+            rng = np.random.default_rng(h * w % (2**16))
+            yy, xx = np.ogrid[:h, :w]
+            cx = w * 0.5 + rng.uniform(-w * 0.1, w * 0.1)
+            cy = h * 0.5 + rng.uniform(-h * 0.1, h * 0.1)
+            rx, ry = w * 0.35, h * 0.35
+            ellipse = ((xx - cx) ** 2) / rx**2 + ((yy - cy) ** 2) / ry**2
+            mask = (ellipse <= 1.0).astype(np.uint8)
+            class_ids = np.array([0], dtype=np.int32)
+            scores = np.array([0.92], dtype=np.float32)
+            boxes = np.array(
+                [[max(0, cx - rx), max(0, cy - ry), min(w, cx + rx), min(h, cy + ry)]],
+                dtype=np.float32,
+            )
 
         elapsed = (time.perf_counter() - t_start) * 1000
         stats = InferenceStats(
@@ -510,9 +535,9 @@ class HailoInferenceEngine:
         )
         return SegmentationResult(
             mask=mask,
-            class_ids=np.array([0], dtype=np.int32),
-            scores=np.array([0.92], dtype=np.float32),
-            boxes_xyxy=np.array([[max(0, cx - rx), max(0, cy - ry), min(w, cx + rx), min(h, cy + ry)]], dtype=np.float32),
+            class_ids=class_ids,
+            scores=scores,
+            boxes_xyxy=boxes,
             stats=stats,
         )
 
@@ -533,6 +558,96 @@ class HailoInferenceEngine:
             total_ms=elapsed,
         )
         return DepthResult(depth_map=depth.astype(np.float32), stats=stats)
+
+    def _heuristic_artifact_segmentation(
+        self, rgb: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Fallback detector for dark, close demo artifacts on a bright surface.
+
+        This is intentionally simple and demo-friendly: when the real model
+        does not recognize the object class, we look for large dark blobs and
+        label them as `artifact` (class_id = -1). It works well for the black,
+        rock-like wrapped objects used in the demo photos.
+        """
+        h, w = rgb.shape[:2]
+        min_area = max(4000, int(h * w * 0.015))
+        max_area = int(h * w * 0.75)
+
+        try:
+            import cv2
+
+            gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+            gray = cv2.GaussianBlur(gray, (5, 5), 0)
+            dark_threshold = int(
+                np.clip(min(118, np.percentile(gray, 28)), 45, 118)
+            )
+            mask = (gray <= dark_threshold).astype(np.uint8) * 255
+
+            kernel = np.ones((7, 7), np.uint8)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+
+            num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, 8)
+
+            boxes: list[list[float]] = []
+            scores: list[float] = []
+            class_ids: list[int] = []
+            masks: list[np.ndarray] = []
+
+            for idx in range(1, num_labels):
+                x, y, bw, bh, area = stats[idx]
+                area = int(area)
+                if area < min_area or area > max_area:
+                    continue
+
+                area_ratio = area / float(h * w)
+                size_ratio = max(bw / float(w), bh / float(h))
+                confidence = min(0.96, 0.55 + area_ratio * 3.0 + size_ratio * 0.18)
+
+                comp_mask = (labels == idx).astype(np.uint8)
+                boxes.append([float(x), float(y), float(x + bw), float(y + bh)])
+                scores.append(float(confidence))
+                class_ids.append(-1)
+                masks.append(comp_mask)
+
+            if boxes:
+                order = np.argsort(np.array(scores))[::-1]
+                return (
+                    np.stack([masks[i] for i in order], axis=0).astype(np.uint8),
+                    np.array([class_ids[i] for i in order], dtype=np.int32),
+                    np.array([scores[i] for i in order], dtype=np.float32),
+                    np.array([boxes[i] for i in order], dtype=np.float32),
+                )
+        except Exception as exc:
+            logger.debug(f"Heuristic artifact detection skipped: {exc}")
+
+        # Minimal numpy-only fallback: one big dark region if present.
+        gray = (0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]).astype(
+            np.float32
+        )
+        dark = gray <= np.clip(np.percentile(gray, 25), 45, 118)
+        ys, xs = np.where(dark)
+        if len(xs) >= min_area:
+            x1, x2 = xs.min(), xs.max()
+            y1, y2 = ys.min(), ys.max()
+            box_area = (x2 - x1 + 1) * (y2 - y1 + 1)
+            if box_area <= max_area:
+                area_ratio = len(xs) / float(h * w)
+                size_ratio = max((x2 - x1 + 1) / float(w), (y2 - y1 + 1) / float(h))
+                confidence = min(0.9, 0.52 + area_ratio * 2.4 + size_ratio * 0.18)
+                return (
+                    dark.astype(np.uint8),
+                    np.array([-1], dtype=np.int32),
+                    np.array([confidence], dtype=np.float32),
+                    np.array([[float(x1), float(y1), float(x2), float(y2)]], dtype=np.float32),
+                )
+
+        return (
+            np.zeros((h, w), dtype=np.uint8),
+            np.array([], dtype=np.int32),
+            np.array([], dtype=np.float32),
+            np.zeros((0, 4), dtype=np.float32),
+        )
 
     # ------------------------------------------------------------------
     # Helpers

@@ -59,6 +59,14 @@ npm run preview
 
 Serves the `dist/` folder locally on port 4173.
 
+### Type-Check / Lint
+
+```bash
+npm run lint
+```
+
+This project's `lint` script is currently a strict TypeScript check (`tsc --noEmit`).
+
 ---
 
 ## Environment Variables
@@ -94,18 +102,20 @@ frontend/
     ├── api/
     │   ├── client.ts               # axios instance, baseURL, error interceptor
     │   ├── jobs.ts                 # getJob, pollJob, initBundle, finalizeBundle
-    │   └── assets.ts               # listAssets, getHealth, getPlyUrl, getGlbUrl
+    │   ├── assets.ts               # listAssets, getHealth, getPlyUrl, getGlbUrl
+    │   └── live.ts                 # getLiveFrame, getLiveFrameImageUrl
     ├── components/
     │   ├── Layout.tsx              # App shell: sticky nav + max-width content
     │   ├── Navbar.tsx              # Gradient logo + nav links (NavLink)
     │   ├── StatusBadge.tsx         # Animated badge for JobStatus (pulse when running)
     │   ├── ProgressTimeline.tsx    # 9-stage vertical pipeline tracker
-    │   └── Viewer3D.tsx            # R3F Canvas: GLB/PLY loader, OrbitControls, camera rig
+    │   └── Viewer3D.tsx            # R3F Canvas: GLB/PLY loader + built-in demo excavation scene
     └── pages/
         ├── Dashboard.tsx           # `/` — health, stats, job lookup, recent jobs
         ├── JobDetail.tsx           # `/jobs/:jobId` — live polling, stages, downloads
+        ├── LiveStream.tsx          # `/live` — digital twin feed with AI overlays
         ├── AssetLibrary.tsx        # `/assets` — responsive card grid of finished scans
-        └── Viewer.tsx              # `/viewer/:jobId` — dark WebGL viewer shell
+        └── Viewer.tsx              # `/viewer/:jobId` + `/viewer/demo` — dark WebGL viewer shell
 ```
 
 ---
@@ -115,9 +125,11 @@ frontend/
 | Route              | Page             | What it does |
 |--------------------|------------------|--------------|
 | `/`                | Dashboard        | Backend health indicator, 7 status stat cards, Job ID lookup form, recent-jobs table (persisted in `localStorage`). |
+| `/live`            | Live Feed        | Polls the backend's latest live frame and renders AI boxes + depth stats from the edge node digital twin. |
 | `/jobs/:jobId`     | Job Detail       | Auto-polls the job every 2s until terminal. 9-stage vertical timeline with per-stage percent and message. On completion shows vertex/face counts + GLB/PLY download CTAs + Viewer deep-link. On failure shows the error stack. |
-| `/assets`          | Asset Library    | Merges backend `GET /assets` with locally-seen job IDs into a responsive card grid. Each card has a CSS animated 3D cube thumbnail, size/format chips, and links to Job Detail / Viewer. |
+| `/assets`          | Asset Library    | Merges backend `GET /assets` with locally-seen job IDs into a responsive card grid. Also includes a built-in **Demo Map** card for presentations when no real asset is ready. |
 | `/viewer/:jobId`   | 3D Viewer        | Dark full-screen WebGL shell. Segmented control to switch GLB ↔ PLY. Toggle toolbar: Auto-Rotate, Grid, Wireframe, Axes. Download button. Auto-frames the camera on the mesh bounding box so any scan size works. |
+| `/viewer/demo`     | Demo Viewer      | Built-in fake excavation scene that does not depend on the backend or a generated GLB/PLY. Useful for demos and judging. |
 | `*`                | 404              | Friendly not-found page with link back to Dashboard. |
 
 ---

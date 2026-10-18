@@ -109,7 +109,7 @@ export const AssetLibrary: React.FC = () => {
           <p className="page-subtitle">
             {loading
               ? "Loading assets..."
-              : `${groups.length} completed scan${groups.length === 1 ? "" : "s"} in library`}
+              : `${groups.length + 1} item${groups.length === 0 ? "" : "s"} in library including the demo map`}
           </p>
         </div>
       </div>
@@ -139,6 +139,52 @@ export const AssetLibrary: React.FC = () => {
         </div>
       ) : (
         <div className="card-grid">
+          <div className="card asset-card">
+            <div
+              className="asset-thumb"
+              onClick={() => navigate("/viewer/demo?format=demo")}
+            >
+              <div className="thumb-placeholder">
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>🗺️</div>
+                  <div style={{ fontWeight: 700, color: "#e2e8f0" }}>Demo Map</div>
+                  <div style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
+                    Fake excavation scene
+                  </div>
+                </div>
+              </div>
+              <div className="thumb-overlay">
+                <span className="thumb-overlay-text">Open Demo →</span>
+              </div>
+            </div>
+
+            <div className="asset-meta">
+              <div className="asset-title-row">
+                <h3 className="asset-title">Excavation Demo Map</h3>
+              </div>
+              <div className="asset-sub">
+                <span>Built into frontend</span>
+                <span>·</span>
+                <span>No backend required</span>
+              </div>
+
+              <div className="asset-stats">
+                <span>🧪 Fake showcase asset</span>
+                <span>🪨 3 large artifacts</span>
+                <span>📍 Marker stones</span>
+              </div>
+
+              <div className="asset-actions">
+                <Link
+                  to="/viewer/demo?format=demo"
+                  className="btn btn-primary btn-sm"
+                >
+                  View Demo
+                </Link>
+              </div>
+            </div>
+          </div>
+
           {groups.map((g) => {
             const hasGLB = !!g.assets.glb;
             const hasPLY = !!g.assets.ply;

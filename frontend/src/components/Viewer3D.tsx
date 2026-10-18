@@ -16,7 +16,7 @@ import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader.js";
 
 interface Viewer3DProps {
   src: string;
-  format: "glb" | "ply";
+  format: "glb" | "ply" | "demo";
   showGrid?: boolean;
   autoRotate?: boolean;
   background?: string;
@@ -113,6 +113,73 @@ function Model({ src, format, onBoundingBox }: ModelProps) {
   }, [src, format, onBoundingBox]);
 
   return <group ref={groupRef} />;
+}
+
+function DemoExcavationScene({
+  onBoundingBox,
+}: {
+  onBoundingBox?: (box: THREE.Box3) => void;
+}) {
+  const groupRef = useRef<THREE.Group>(null);
+
+  useEffect(() => {
+    const group = groupRef.current;
+    if (!group || !onBoundingBox) return;
+    const box = new THREE.Box3().setFromObject(group);
+    onBoundingBox(box);
+  }, [onBoundingBox]);
+
+  const artifactMaterial = new THREE.MeshStandardMaterial({
+    color: "#1a1c22",
+    roughness: 0.95,
+    metalness: 0.03,
+  });
+  const markerMaterial = new THREE.MeshStandardMaterial({
+    color: "#7c8796",
+    roughness: 0.9,
+    metalness: 0.02,
+  });
+
+  return (
+    <group ref={groupRef}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.28, 0]} receiveShadow>
+        <planeGeometry args={[8.4, 12]} />
+        <meshStandardMaterial color="#f8fafc" roughness={0.95} metalness={0} />
+      </mesh>
+
+      <mesh position={[0.1, 0.25, 2.7]} rotation={[0.08, -0.18, 0.02]} castShadow receiveShadow>
+        <boxGeometry args={[2.6, 2.1, 2.2]} />
+        <primitive object={artifactMaterial.clone()} attach="material" />
+      </mesh>
+      <mesh position={[-1.0, 0.15, 0.3]} rotation={[0.06, 0.22, -0.05]} castShadow receiveShadow>
+        <boxGeometry args={[2.4, 1.7, 2.0]} />
+        <primitive object={artifactMaterial.clone()} attach="material" />
+      </mesh>
+      <mesh position={[1.2, 0.4, -2.8]} rotation={[0.12, -0.1, 0.04]} castShadow receiveShadow>
+        <boxGeometry args={[3.2, 2.8, 2.5]} />
+        <primitive object={artifactMaterial.clone()} attach="material" />
+      </mesh>
+
+      {[
+        [-2.9, -0.1, 4.2],
+        [2.7, -0.1, -4.4],
+        [-2.6, -0.1, -4.0],
+        [2.3, -0.1, 4.0],
+        [0.4, -0.1, -4.2],
+        [1.6, -0.1, -4.0],
+      ].map((pos, idx) => (
+        <mesh key={idx} position={pos as [number, number, number]} castShadow receiveShadow>
+          <dodecahedronGeometry args={[0.34, 0]} />
+          <primitive object={markerMaterial.clone()} attach="material" />
+        </mesh>
+      ))}
+
+      <mesh position={[-1.9, -0.21, -4.45]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <boxGeometry args={[0.95, 0.02, 0.18]} />
+        <meshStandardMaterial color="#f8b4c0" roughness={0.8} />
+      </mesh>
+    </group>
+  );
 }
 
 function CameraRig({
@@ -239,7 +306,11 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                 }
               }}
             >
-              <Model src={src} format={format} onBoundingBox={handleBbox} />
+              {format === "demo" ? (
+                <DemoExcavationScene onBoundingBox={handleBbox} />
+              ) : (
+                <Model src={src} format={format} onBoundingBox={handleBbox} />
+              )}
             </group>
           </Center>
 
