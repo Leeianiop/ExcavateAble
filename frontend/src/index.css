@@ -974,3 +974,175 @@ code {
 .health-indicator {
   align-self: flex-end;
 }
+
+/* ---------- Robot Control ---------- */
+.robot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.robot-status {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-hover);
+  font-weight: 600;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+.robot-status.connected {
+  background: var(--success-soft);
+  color: #065f46;
+  border: 1px solid #10b98144;
+}
+.robot-status.disconnected {
+  background: var(--danger-soft);
+  color: #991b1b;
+  border: 1px solid #ef444444;
+}
+
+.robot-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-subtle);
+}
+.robot-dot.on {
+  background: var(--success);
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.15);
+  animation: pulse-dot 1.5s infinite;
+}
+
+.robot-toast {
+  min-height: 20px;
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--primary);
+  overflow-wrap: anywhere;
+}
+.robot-toast.error {
+  color: var(--danger);
+}
+
+.robot-dpad {
+  display: grid;
+  grid-template-columns: repeat(3, 72px);
+  grid-template-rows: repeat(3, 72px);
+  gap: 0.6rem;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+.robot-dpad button {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1.4rem;
+  cursor: pointer;
+  transition: all 0.12s;
+  touch-action: manipulation;
+  user-select: none;
+  font-family: inherit;
+}
+.robot-dpad button:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+.robot-dpad button:active:not(:disabled) {
+  background: var(--primary);
+  color: white;
+  transform: scale(0.96);
+}
+.robot-dpad button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.robot-dpad button.stop {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: white;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.robot-dpad button.stop:hover:not(:disabled) {
+  background: #dc2626;
+  color: white;
+}
+.robot-dpad .spacer {
+  visibility: hidden;
+}
+
+.robot-sensors {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.75rem;
+}
+.robot-sensor {
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
+}
+.robot-sensor-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.robot-sensor-value {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin-top: 0.25rem;
+  font-variant-numeric: tabular-nums;
+}
+.robot-sensor-unit {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-left: 0.15rem;
+}
+
+.robot-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+.robot-row-label {
+  width: 88px;
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.robot-row input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--primary);
+}
+.robot-row input[type="range"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.robot-row-value {
+  width: 46px;
+  text-align: right;
+  font-weight: 700;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.robot-note {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}

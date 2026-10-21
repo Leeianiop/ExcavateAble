@@ -156,3 +156,45 @@ export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   failed: "Failed",
   cancelled: "Cancelled",
 };
+
+// ------------------------------------------------------------------
+// Robot control (ESP32-C3 over BLE)
+// ------------------------------------------------------------------
+export interface RobotState {
+  connected: boolean;
+  connecting: boolean;
+  status: string;
+  temperature: string;
+  humidity: string;
+  mq8: string;
+  mq5: string;
+  last_message: string;
+  last_command: string;
+  mock: boolean;
+  device_name: string;
+}
+
+export interface RobotActionResponse {
+  ok: boolean;
+  message: string;
+  error?: string | null;
+  command?: string | null;
+}
+
+export type RobotDirection = "F" | "B" | "L" | "R";
+
+export interface ServoControl {
+  key: string;
+  label: string;
+  make: (angle: number) => string;
+}
+
+/** Per-channel (A0..A3) and paired (P, Q) servo commands the firmware accepts. */
+export const SERVO_CONTROLS: ServoControl[] = [
+  { key: "A0", label: "Channel 0", make: (a) => `A0:${a}` },
+  { key: "A1", label: "Channel 1", make: (a) => `A1:${a}` },
+  { key: "A2", label: "Channel 2", make: (a) => `A2:${a}` },
+  { key: "A3", label: "Channel 3", make: (a) => `A3:${a}` },
+  { key: "P", label: "Paired P", make: (a) => `P:${a}` },
+  { key: "Q", label: "Paired Q", make: (a) => `Q:${a}` },
+];
