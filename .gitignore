@@ -41,6 +41,9 @@ frontend/.vite/
 .DS_Store
 Thumbs.db
 
+#cmd
+start-all.cmd
+
 # Hardware project files (large binaries)
 *.stl
 *.f3d

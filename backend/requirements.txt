@@ -22,6 +22,10 @@ numpy>=2.2
 Pillow>=10.0
 PyYAML>=6.0
 
+# --- Robot control (ESP32-C3 over BLE) — optional ---
+# Required only for real hardware. If absent, the robot API runs in mock mode.
+bleak>=0.22
+
 # --- 3D post-processing (optional, used in decimation/GLB export fallback) ---
 # Install if you want mesh decimation + watertight export without OpenMVS TextureMesh:
 # trimesh>=4.0

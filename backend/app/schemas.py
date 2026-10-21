@@ -125,3 +125,31 @@ class LiveFrameResponse(BaseModel):
     depth_max: float = 0.0
     depth_mean: float = 0.0
     image_url: str = "/api/v1/live/frame/image"
+
+
+# ------------------------------------------------------------------
+# Robot control (ESP32-C3 over BLE)
+# ------------------------------------------------------------------
+class RobotState(BaseModel):
+    connected: bool = False
+    connecting: bool = False
+    status: str = "Not connected"
+    temperature: str = "--"
+    humidity: str = "--"
+    mq8: str = "--"
+    mq5: str = "--"
+    last_message: str = ""
+    last_command: str = ""
+    mock: bool = False
+    device_name: str = ""
+
+
+class RobotCommandRequest(BaseModel):
+    command: str
+
+
+class RobotActionResponse(BaseModel):
+    ok: bool
+    message: str = ""
+    error: Optional[str] = None
+    command: Optional[str] = None
