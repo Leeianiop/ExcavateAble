@@ -228,7 +228,7 @@ The big banner prints the `job_id`. Paste it into **http://localhost:5173** → 
 
 > You also need Hailo `.hef` model files in `edge_node/models/` (download `yolov8n-seg.hef` + `dpt_lite.hef` from the [Hailo Model Zoo](https://github.com/hailo-ai/hailo_model_zoo)). Without them, the AI inference falls back to mock masks/depth.
 
-> For demos where the real model does not recognize your custom artifact class, the edge node now includes a fallback **heuristic artifact detector** that labels large, dark, close objects as `artifact`. This is meant for showcasing the workflow, not as a real trained detector.
+> For demos where the real model does not recognize your custom artifact class, the edge node includes a fallback **heuristic artifact detector**. It is gated to **close-range objects (~10 cm from the lens)**: it labels large, dark, centered blobs as `artifact` and ignores small or distant ones. This is meant for showcasing the workflow, not as a real trained detector.
 
 ---
 

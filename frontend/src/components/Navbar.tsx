@@ -27,7 +27,7 @@ export const Navbar: React.FC = () => {
           </div>
           <div>
             <div className="brand-title">Excavatable</div>
-            <div className="brand-subtitle">3D Scanning System</div>
+            <div className="brand-subtitle">2D Live Feed</div>
           </div>
         </NavLink>
 

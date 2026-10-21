@@ -562,16 +562,44 @@ class HailoInferenceEngine:
     def _heuristic_artifact_segmentation(
         self, rgb: np.ndarray
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """Fallback detector for dark, close demo artifacts on a bright surface.
+        """Fallback detector for dark demo artifacts held close to the lens.
 
         This is intentionally simple and demo-friendly: when the real model
         does not recognize the object class, we look for large dark blobs and
         label them as `artifact` (class_id = -1). It works well for the black,
         rock-like wrapped objects used in the demo photos.
+
+        The detector is gated to *close-range* objects, roughly 10 cm from the
+        camera. There is no metric depth on this RGB-only path, so apparent
+        blob size stands in for distance: a wrapped rock filling a large part
+        of the frame is reported, while a similar object further away is not.
         """
         h, w = rgb.shape[:2]
-        min_area = max(4000, int(h * w * 0.015))
-        max_area = int(h * w * 0.75)
+        frame_area = float(h * w)
+
+        # Close-range gate (apparent size as a proxy for ~10 cm distance).
+        close_min_area_ratio = 0.12   # blob must cover >= 12% of the frame
+        close_max_area_ratio = 0.85   # ...but not the entire frame
+        close_min_span_ratio = 0.38   # longest box side >= 38% of the frame
+        close_center_tolerance = 0.42  # box centre within the middle 42%
+
+        min_area = int(frame_area * close_min_area_ratio)
+        max_area = int(frame_area * close_max_area_ratio)
+
+        def _is_close(x: float, y: float, bw: float, bh: float, area: int) -> bool:
+            """True when a blob looks like it is right in front of the lens."""
+            if area < min_area or area > max_area:
+                return False
+            span = max(bw / float(w), bh / float(h))
+            if span < close_min_span_ratio:
+                return False
+            cx = (x + bw / 2.0) / float(w)
+            cy = (y + bh / 2.0) / float(h)
+            half = close_center_tolerance / 2.0
+            return (
+                (0.5 - half) <= cx <= (0.5 + half)
+                and (0.5 - half) <= cy <= (0.5 + half)
+            )
 
         try:
             import cv2
@@ -597,12 +625,12 @@ class HailoInferenceEngine:
             for idx in range(1, num_labels):
                 x, y, bw, bh, area = stats[idx]
                 area = int(area)
-                if area < min_area or area > max_area:
+                if not _is_close(x, y, bw, bh, area):
                     continue
 
-                area_ratio = area / float(h * w)
+                area_ratio = area / frame_area
                 size_ratio = max(bw / float(w), bh / float(h))
-                confidence = min(0.96, 0.55 + area_ratio * 3.0 + size_ratio * 0.18)
+                confidence = min(0.97, 0.62 + area_ratio * 1.6 + size_ratio * 0.12)
 
                 comp_mask = (labels == idx).astype(np.uint8)
                 boxes.append([float(x), float(y), float(x + bw), float(y + bh)])
@@ -630,11 +658,11 @@ class HailoInferenceEngine:
         if len(xs) >= min_area:
             x1, x2 = xs.min(), xs.max()
             y1, y2 = ys.min(), ys.max()
-            box_area = (x2 - x1 + 1) * (y2 - y1 + 1)
-            if box_area <= max_area:
-                area_ratio = len(xs) / float(h * w)
-                size_ratio = max((x2 - x1 + 1) / float(w), (y2 - y1 + 1) / float(h))
-                confidence = min(0.9, 0.52 + area_ratio * 2.4 + size_ratio * 0.18)
+            bw, bh = int(x2 - x1 + 1), int(y2 - y1 + 1)
+            if _is_close(float(x1), float(y1), float(bw), float(bh), int(len(xs))):
+                area_ratio = len(xs) / frame_area
+                size_ratio = max(bw / float(w), bh / float(h))
+                confidence = min(0.9, 0.6 + area_ratio * 1.4 + size_ratio * 0.12)
                 return (
                     dark.astype(np.uint8),
                     np.array([-1], dtype=np.int32),
