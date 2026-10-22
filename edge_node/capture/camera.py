@@ -257,9 +257,30 @@ class CameraCapture:
     def _capture_mock(
         self, shot_id: str, shot_index: int, timestamp_ns: int
     ) -> CapturedShot:
-        rng = np.random.default_rng(shot_index)
-        rgb = (rng.random((self.config.height, self.config.width, 3)) * 255).astype(np.uint8)
-        raw = (rng.random((self.config.height, self.config.width)) * 4095).astype(np.uint16)
+        h, w = self.config.height, self.config.width
+        yy, xx = np.mgrid[0:h, 0:w]
+
+        # Make mock mode unmistakable in the browser instead of showing
+        # random static that looks like a broken JPEG stream.
+        rgb = np.zeros((h, w, 3), dtype=np.uint8)
+        rgb[..., 0] = (xx * 255 // max(w - 1, 1)).astype(np.uint8)
+        rgb[..., 1] = (yy * 255 // max(h - 1, 1)).astype(np.uint8)
+        rgb[..., 2] = 96
+
+        # Overlay a simple grid so scale/orientation remain easy to inspect.
+        grid_mask = ((xx % 64) < 2) | ((yy % 64) < 2)
+        rgb[grid_mask] = np.array([255, 255, 255], dtype=np.uint8)
+
+        # Add a centered warning banner using plain array slicing so we do not
+        # depend on extra drawing libraries on the Pi.
+        banner_h = max(64, h // 7)
+        y0 = max(0, (h - banner_h) // 2)
+        y1 = min(h, y0 + banner_h)
+        rgb[y0:y1, :, :] = np.array([20, 20, 20], dtype=np.uint8)
+        rgb[y0:y0 + 4, :, :] = np.array([239, 68, 68], dtype=np.uint8)
+        rgb[y1 - 4:y1, :, :] = np.array([239, 68, 68], dtype=np.uint8)
+
+        raw = ((xx + yy) % 4096).astype(np.uint16)
         metadata = ShotMetadata(
             shot_id=shot_id,
             shot_index=shot_index,

@@ -311,6 +311,10 @@ def cmd_live_stream(args: argparse.Namespace) -> int:
             print("ERROR: httpx not available — cannot stream to backend.")
             return 3
 
+        if not cam.using_hardware:
+            print("[warn] Camera hardware unavailable - streaming mock frames instead.")
+            print("[warn] Check Picamera2 install, camera ribbon seating, and libcamera access.\n")
+
         frame_count = 0
         shot_index = 0
         try:
