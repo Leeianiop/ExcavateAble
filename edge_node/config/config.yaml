@@ -31,7 +31,11 @@ hailo:
   device_id: 0
 
 upload:
-  backend_url: "http://localhost:8000"
+  # Must be the HOST machine's LAN IP, not localhost: on the Pi "localhost"
+  # is the Pi itself, so every upload dies with Errno 111 (connection refused).
+  # 192.168.137.1 = Windows Mobile Hotspot. Use 192.168.0.2 if the Pi is on
+  # the home router instead (and disable AP isolation).
+  backend_url: "http://192.168.137.1:8000"
   api_key: ""
   upload_timeout_sec: 120
   max_retries: 3
