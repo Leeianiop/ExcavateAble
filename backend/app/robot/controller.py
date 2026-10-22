@@ -260,6 +260,19 @@ class RobotController:
 
         return None
 
+    @staticmethod
+    def _log_gatt_tree(client: Any) -> None:
+        """Log the peripheral's GATT tree — invaluable when UUIDs don't match."""
+        try:
+            for service in client.services:
+                logger.warning("  service %s", service.uuid)
+                for char in service.characteristics:
+                    logger.warning(
+                        "    char %s [%s]", char.uuid, ",".join(char.properties)
+                    )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Could not enumerate GATT services: %s", exc)
+
     async def _do_connect_ble(self) -> None:
         client = None
         try:
@@ -305,7 +318,20 @@ class RobotController:
                 return
 
             self._client = client
-            await client.start_notify(TX_UUID, self._on_notification)
+            try:
+                await client.start_notify(TX_UUID, self._on_notification)
+            except Exception:
+                # Some firmware builds implement the Nordic UART RX (write)
+                # characteristic but never send telemetry, so no TX/notify
+                # characteristic exists. Movement, servo and LED commands still
+                # work — only the sensor readout is unavailable.
+                logger.warning(
+                    "Peripheral %s exposes no notify characteristic (%s); "
+                    "continuing in command-only mode (no sensor telemetry)",
+                    device.name,
+                    TX_UUID,
+                )
+                self._log_gatt_tree(client)
 
             self._set(
                 connected=True,
