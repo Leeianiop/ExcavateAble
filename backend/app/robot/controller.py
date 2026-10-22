@@ -4,7 +4,7 @@ ESP32-C3 robot controller over BLE.
 Ported from the standalone Flask prototype (``websensor+control.py``) so the same
 capabilities are available through the main backend API:
 
-  * BLE connect / disconnect to the ``ESP32C3_Sensors`` peripheral
+  * BLE connect / disconnect to the ``ESP32C3_*`` peripheral
   * live sensor telemetry (temperature, humidity, MQ-8, MQ-5)
   * movement commands (F/B/L/R/S) with a hold-to-drive watchdog refresh
   * servo commands (U/D plus per-channel ``A<ch>:<angle>`` / ``P:`` / ``Q:``)
@@ -39,7 +39,11 @@ except Exception:  # pragma: no cover - depends on host environment
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_DEVICE_NAME = "ESP32C3_Sensors"
+# Advertising names the ESP32-C3 firmware has used. Firmware builds differ
+# (the standalone prototype was written against "ESP32C3_Sensors", but the
+# board advertises "ESP32C3_Servo"), so accept any of them.
+DEFAULT_DEVICE_NAMES = ("ESP32C3_Sensors", "ESP32C3_Servo")
+
 SERVICE_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
 RX_UUID = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
 TX_UUID = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
@@ -77,10 +81,17 @@ class RobotController:
 
     def __init__(
         self,
-        device_name: str | None = None,
+        device_names: tuple[str, ...] | None = None,
         force_mock: bool | None = None,
     ) -> None:
-        self.device_name = device_name or os.getenv("ROBOT_DEVICE_NAME", DEFAULT_DEVICE_NAME)
+        if device_names is None:
+            env_names = os.getenv("ROBOT_DEVICE_NAME", "")
+            device_names = tuple(
+                name.strip() for name in env_names.split(",") if name.strip()
+            ) or DEFAULT_DEVICE_NAMES
+
+        self.device_names = tuple(device_names)
+        self.device_name = self.device_names[0]
 
         if force_mock is None:
             force_mock = os.getenv("ROBOT_MOCK", "").strip().lower() in {"1", "true", "yes", "on"}
@@ -231,25 +242,65 @@ class RobotController:
             last_message=f"T:{temperature}C H:{humidity}% MQ8:{mq8} MQ5:{mq5}",
         )
 
+    def _pick_device(self, devices: list[Any]) -> Any | None:
+        """Return the ESP32 from a scan result, tolerating firmware name drift."""
+        named = {d.name.lower(): d for d in devices if d.name}
+
+        for accepted in self.device_names:
+            if accepted.lower() in named:
+                return named[accepted.lower()]
+
+        # Firmware builds have shipped under several ESP32C3_* names; if none of
+        # the configured names matched, fall back to any ESP32 peripheral rather
+        # than silently reporting "not found".
+        for name, device in named.items():
+            if name.startswith("esp32"):
+                logger.info("Using ESP32 candidate %r (not an exact name match)", name)
+                return device
+
+        return None
+
     async def _do_connect_ble(self) -> None:
         client = None
         try:
-            logger.info("Scanning for %s", self.device_name)
-            devices = await BleakScanner.discover(timeout=8)
-            device = next((d for d in devices if d.name == self.device_name), None)
+            device = None
+            attempts = 3
+            for attempt in range(1, attempts + 1):
+                self._set(status=f"Scanning for ESP32… (attempt {attempt}/{attempts})")
+                logger.info("Scanning for %s (attempt %d)", self.device_names, attempt)
+
+                devices = await BleakScanner.discover(timeout=8)
+                device = self._pick_device(devices)
+
+                if device is None:
+                    logger.warning("ESP32 not found on attempt %d", attempt)
+                    continue
+
+                try:
+                    client = BleakClient(device)
+                    await client.connect()
+                except Exception as exc:
+                    # The first WinRT connect after a scan is often flaky
+                    # ("Unreachable" / GATT discovery timeout); retry.
+                    logger.warning("Connect attempt %d failed: %s", attempt, exc)
+                    client = None
+                    await asyncio.sleep(1.5)
+                    continue
+
+                if client.is_connected:
+                    break
+
+                client = None
 
             if device is None:
                 self._set(
                     connecting=False,
                     status="ESP32 not found. Check power and BLE advertising.",
                 )
-                logger.warning("ESP32 %s not found", self.device_name)
+                logger.warning("ESP32 %s not found", self.device_names)
                 return
 
-            client = BleakClient(device)
-            await client.connect()
-
-            if not client.is_connected:
+            if client is None or not client.is_connected:
                 self._set(connecting=False, status="Connection failed")
                 return
 
@@ -259,9 +310,10 @@ class RobotController:
             self._set(
                 connected=True,
                 connecting=False,
-                status=f"Connected to {self.device_name}",
+                status=f"Connected to {device.name}",
+                device_name=device.name,
             )
-            logger.info("Connected to %s", self.device_name)
+            logger.info("Connected to %s", device.name)
 
             # Keep the link alive until the peripheral drops or we disconnect.
             while client.is_connected:
@@ -335,7 +387,7 @@ class RobotController:
 __all__ = [
     "RobotController",
     "is_valid_command",
-    "DEFAULT_DEVICE_NAME",
+    "DEFAULT_DEVICE_NAMES",
     "SERVICE_UUID",
     "RX_UUID",
     "TX_UUID",
