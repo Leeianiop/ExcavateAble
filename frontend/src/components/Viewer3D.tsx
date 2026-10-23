@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import {
   OrbitControls,
@@ -362,10 +362,31 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
   const controlsRef = useRef<any>(null);
   const sceneRef = useRef<THREE.Group>(null);
   const isPlyView = format === "ply";
+  const bboxSigRef = useRef("");
 
-  const handleBbox = (box: THREE.Box3) => {
+  const handleBbox = useCallback((box: THREE.Box3) => {
+    if (box.isEmpty()) return;
+
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(center);
+
+    const sig = [
+      center.x.toFixed(4),
+      center.y.toFixed(4),
+      center.z.toFixed(4),
+      size.x.toFixed(4),
+      size.y.toFixed(4),
+      size.z.toFixed(4),
+    ].join("|");
+
+    if (bboxSigRef.current === sig) {
+      return;
+    }
+    bboxSigRef.current = sig;
     setBbox(box.clone());
-  };
+  }, []);
 
   useEffect(() => {
     const root = sceneRef.current;
