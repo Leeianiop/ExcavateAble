@@ -59,6 +59,7 @@ function Model({ src, format, onBoundingBox }: ModelProps) {
 
       let mesh: THREE.Mesh;
       if (object instanceof THREE.BufferGeometry) {
+        object.computeBoundingBox();
         if (!object.attributes.normal || object.attributes.normal.count === 0) {
           object.computeVertexNormals();
         }
@@ -71,20 +72,21 @@ function Model({ src, format, onBoundingBox }: ModelProps) {
           vertexColors: hasColor,
           color: hasColor ? undefined : 0xcccccc,
           side: THREE.FrontSide,
-          flatShading: true,
-          roughness: 0.8,
-          metalness: 0.1,
+          flatShading: false,
+          roughness: 0.92,
+          metalness: 0.02,
           polygonOffset: true,
-          polygonOffsetFactor: 1,
-          polygonOffsetUnits: 1,
+          polygonOffsetFactor: 2,
+          polygonOffsetUnits: 2,
         });
         mesh = new THREE.Mesh(object, material);
       } else {
         mesh = object as unknown as THREE.Mesh;
       }
 
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
+      mesh.castShadow = format !== "ply";
+      mesh.receiveShadow = false;
+      mesh.renderOrder = format === "ply" ? 10 : 0;
       group.add(mesh);
       meshRef.current = mesh;
 
@@ -359,6 +361,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
   const [showAxes, setShowAxes] = useState(false);
   const controlsRef = useRef<any>(null);
   const sceneRef = useRef<THREE.Group>(null);
+  const isPlyView = format === "ply";
 
   const handleBbox = (box: THREE.Box3) => {
     setBbox(box.clone());
@@ -411,18 +414,18 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
       </div>
 
       <Canvas
-        shadows
+        shadows={!isPlyView}
         camera={{ position: [4, 3, 4], fov: 45 }}
-        gl={{ antialias: true, alpha: false }}
+        gl={{ antialias: true, alpha: false, logarithmicDepthBuffer: true }}
         style={{ background, touchAction: "none", cursor: "grab" }}
       >
         <color attach="background" args={[background]} />
 
-        <ambientLight intensity={0.6} />
+        <ambientLight intensity={isPlyView ? 0.9 : 0.6} />
         <directionalLight
           position={[5, 8, 5]}
-          intensity={1.2}
-          castShadow
+          intensity={isPlyView ? 0.75 : 1.2}
+          castShadow={!isPlyView}
           shadow-mapSize-width={2048}
           shadow-mapSize-height={2048}
         />
@@ -440,13 +443,15 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
           </group>
 
           <Environment preset="city" />
-          <ContactShadows
-            position={[0, -0.01, 0]}
-            opacity={0.5}
-            scale={10}
-            blur={2.5}
-            far={4}
-          />
+          {!isPlyView && (
+            <ContactShadows
+              position={[0, -0.01, 0]}
+              opacity={0.5}
+              scale={10}
+              blur={2.5}
+              far={4}
+            />
+          )}
           {showGrid && (
             <Grid
               position={[0, -0.01, 0]}
