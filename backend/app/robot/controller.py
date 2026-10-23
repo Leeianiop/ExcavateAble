@@ -28,6 +28,7 @@ import asyncio
 import logging
 import os
 import random
+import re
 import threading
 import time
 from typing import Any, Callable
@@ -125,6 +126,21 @@ def _extract_legacy_field(message: str, label: str) -> str | None:
     if end < 0:
         end = len(message)
     return message[start:end].strip()
+
+
+def _extract_gas_field(message: str, name: str) -> str | None:
+    """Extract MQ telemetry from either modern or legacy formats.
+
+    Supported examples:
+    - ``MQ8:LOW``
+    - ``MQ8:LOW MQ5:HIGH``
+    - ``MQ8 DO: LOW``
+    - ``Temperature: DHT11 read failed MQ8 DO: LOW MQ5 DO: LOW``
+    """
+    match = re.search(rf"\b{name}(?:\s+DO)?\s*:\s*([A-Za-z0-9.]+)", message, re.IGNORECASE)
+    if match is None:
+        return None
+    return match.group(1)
 
 
 class RobotController:
@@ -236,6 +252,13 @@ class RobotController:
         message = message.strip()
         updates: dict[str, Any] = {"last_message": message}
 
+        mq8 = _extract_gas_field(message, "MQ8")
+        mq5 = _extract_gas_field(message, "MQ5")
+        if mq8 is not None:
+            updates["mq8"] = _normalize_gas(mq8)
+        if mq5 is not None:
+            updates["mq5"] = _normalize_gas(mq5)
+
         if message.startswith("T:"):
             # Example: T:28.0C H:65.0%
             for part in message.split():
@@ -243,22 +266,12 @@ class RobotController:
                     updates["temperature"] = part[2:].replace("C", "")
                 elif part.startswith("H:"):
                     updates["humidity"] = part[2:].replace("%", "")
-        elif message.startswith("MQ8:"):
-            updates["mq8"] = _normalize_gas(message.split(":", 1)[1])
-        elif message.startswith("MQ5:"):
-            updates["mq5"] = _normalize_gas(message.split(":", 1)[1])
         elif message.startswith("DHT:"):
             updates["temperature"] = message.split(":", 1)[1]
         else:
             # Legacy firmware sometimes emits one combined status line like:
             # "Temperature: DHT11 read failed MQ8 DO: LOW MQ5 DO: LOW"
-            mq8 = _extract_legacy_field(message, "MQ8 DO")
-            mq5 = _extract_legacy_field(message, "MQ5 DO")
-
-            if mq8 is not None:
-                updates["mq8"] = _normalize_gas(mq8)
-            if mq5 is not None:
-                updates["mq5"] = _normalize_gas(mq5)
+            pass
 
         self._set(**updates)
 
