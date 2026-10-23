@@ -51,8 +51,8 @@
 static const uint8_t NUM_SERVOS = 4;
 static const uint8_t SERVO_CHANNELS[NUM_SERVOS] = {0, 1, 2, 3};
 
-static const uint8_t PIN_I2C_SDA = 8;
-static const uint8_t PIN_I2C_SCL = 9;
+static const uint8_t PIN_I2C_SDA = 5;
+static const uint8_t PIN_I2C_SCL = 10;
 static const uint8_t PCA9685_ADDR = 0x40;
 
 // Typical 500us..2400us servo range at 50 Hz on a 12-bit PCA9685.
@@ -65,7 +65,7 @@ static const uint8_t PIN_DHT = 5;  // DHT11 is a DIGITAL sensor - not an ADC pin
 static const uint8_t PIN_MQ8 = 6;  // MQ-8 digital output
 static const uint8_t PIN_MQ5 = 7;  // MQ-5 digital output
 
-static const uint8_t PIN_LED = 10;  // WS2812 data
+static const uint8_t PIN_LED = 11;  // WS2812 data
 static const uint8_t NUM_LEDS = 8;
 
 static const uint32_t TELEMETRY_INTERVAL_MS = 2000;
