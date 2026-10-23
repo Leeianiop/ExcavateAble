@@ -4,6 +4,8 @@ import { formatBytes, getGlbUrl, getPlyUrl, getHealth, listAssets } from "../api
 import { getJob } from "../api/jobs";
 import type { AssetInfo, JobResponse } from "../types";
 
+const ARTIFACT_DEMO_PLY_URL = "/demo/artifact-demo.ply?v=horse-side-profile-2";
+
 interface AssetGroup {
   job_id: string;
   bundle_id: string;
@@ -84,6 +86,110 @@ export const AssetLibrary: React.FC = () => {
     })();
   }, []);
 
+  const renderDemoCards = () => (
+    <>
+      <div className="card asset-card">
+        <div
+          className="asset-thumb"
+          onClick={() => navigate("/viewer/demo?format=demo")}
+        >
+          <div className="thumb-placeholder">
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>🗺️</div>
+              <div style={{ fontWeight: 700, color: "#e2e8f0" }}>Demo Map</div>
+              <div style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
+                Excavation scene preview
+              </div>
+            </div>
+          </div>
+          <div className="thumb-overlay">
+            <span className="thumb-overlay-text">Open Demo →</span>
+          </div>
+        </div>
+
+        <div className="asset-meta">
+          <div className="asset-title-row">
+            <h3 className="asset-title">Excavation Demo Map</h3>
+          </div>
+          <div className="asset-sub">
+            <span>Built into frontend</span>
+            <span>·</span>
+            <span>No backend required</span>
+          </div>
+
+          <div className="asset-stats">
+            <span>🧪 Showcase asset</span>
+            <span>🪨 3 large artifacts</span>
+            <span>📍 Marker stones</span>
+          </div>
+
+          <div className="asset-actions">
+            <Link
+              to="/viewer/demo?format=demo"
+              className="btn btn-primary btn-sm"
+            >
+              View Demo
+            </Link>
+          </div>
+        </div>
+      </div>
+
+      <div className="card asset-card">
+        <div
+          className="asset-thumb"
+          onClick={() => navigate("/viewer/artifact-demo?format=ply")}
+        >
+          <div className="thumb-placeholder">
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>🗿</div>
+              <div style={{ fontWeight: 700, color: "#e2e8f0" }}>Artifact Scan</div>
+              <div style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
+                Horse-head side profile
+              </div>
+            </div>
+          </div>
+          <div className="thumb-overlay">
+            <span className="thumb-overlay-text">Open Viewer →</span>
+          </div>
+        </div>
+
+        <div className="asset-meta">
+          <div className="asset-title-row">
+              <h3 className="asset-title">Horse Head Demo Scan</h3>
+          </div>
+          <div className="asset-sub">
+            <span>Built into frontend</span>
+            <span>·</span>
+            <span>Presentation scan</span>
+          </div>
+
+          <div className="asset-stats">
+            <span>🧪 Based on your horse-head artifact</span>
+            <span>📦 Clean ASCII side-profile PLY</span>
+            <span>🎭 Presentation-ready</span>
+          </div>
+
+          <div className="asset-actions">
+            <a
+              href={ARTIFACT_DEMO_PLY_URL}
+              className="link-btn"
+              download
+              onClick={(e) => e.stopPropagation()}
+            >
+              Download PLY
+            </a>
+            <Link
+              to="/viewer/artifact-demo?format=ply"
+              className="btn btn-primary btn-sm"
+            >
+              View 3D
+            </Link>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+
   if (error && groups.length === 0) {
     return (
       <div className="asset-library">
@@ -109,7 +215,7 @@ export const AssetLibrary: React.FC = () => {
           <p className="page-subtitle">
             {loading
               ? "Loading assets..."
-              : `${groups.length + 1} item${groups.length === 0 ? "" : "s"} in library including the demo map`}
+              : `${groups.length + 2} item${groups.length + 2 === 1 ? "" : "s"} in library including the built-in demo assets`}
           </p>
         </div>
       </div>
@@ -125,65 +231,25 @@ export const AssetLibrary: React.FC = () => {
           ))}
         </div>
       ) : groups.length === 0 ? (
-        <div className="card">
-          <div className="card-body">
-            <div className="empty-state">
-              <div className="empty-icon">🗂️</div>
-              <h3 className="empty-title">No assets yet</h3>
-              <p className="empty-subtitle">
-                Run <code>capture-and-upload</code> from the edge node to produce
-                a 3D scan. Completed jobs appear here automatically.
-              </p>
+        <div className="card-grid">
+          {renderDemoCards()}
+          <div className="card">
+            <div className="card-body">
+              <div className="empty-state">
+                <div className="empty-icon">🗂️</div>
+                <h3 className="empty-title">No real assets yet</h3>
+                <p className="empty-subtitle">
+                  Run <code>capture-and-upload</code> from the edge node to produce
+                  a real 3D scan. The demo cards stay here so you still have
+                  something presentation-ready to open.
+                </p>
+              </div>
             </div>
           </div>
         </div>
       ) : (
         <div className="card-grid">
-          <div className="card asset-card">
-            <div
-              className="asset-thumb"
-              onClick={() => navigate("/viewer/demo?format=demo")}
-            >
-              <div className="thumb-placeholder">
-                <div style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>🗺️</div>
-                  <div style={{ fontWeight: 700, color: "#e2e8f0" }}>Demo Map</div>
-                  <div style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
-                    Fake excavation scene
-                  </div>
-                </div>
-              </div>
-              <div className="thumb-overlay">
-                <span className="thumb-overlay-text">Open Demo →</span>
-              </div>
-            </div>
-
-            <div className="asset-meta">
-              <div className="asset-title-row">
-                <h3 className="asset-title">Excavation Demo Map</h3>
-              </div>
-              <div className="asset-sub">
-                <span>Built into frontend</span>
-                <span>·</span>
-                <span>No backend required</span>
-              </div>
-
-              <div className="asset-stats">
-                <span>🧪 Fake showcase asset</span>
-                <span>🪨 3 large artifacts</span>
-                <span>📍 Marker stones</span>
-              </div>
-
-              <div className="asset-actions">
-                <Link
-                  to="/viewer/demo?format=demo"
-                  className="btn btn-primary btn-sm"
-                >
-                  View Demo
-                </Link>
-              </div>
-            </div>
-          </div>
+          {renderDemoCards()}
 
           {groups.map((g) => {
             const hasGLB = !!g.assets.glb;

@@ -6,12 +6,16 @@ import { getJob } from "../api/jobs";
 import { getGlbUrl, getPlyUrl } from "../api/assets";
 import type { JobResponse } from "../types";
 
+const ARTIFACT_DEMO_PLY_URL = "/demo/artifact-demo.ply?v=horse-side-profile-2";
+const ARTIFACT_VIEW_SRC = "demo:horse-head";
+
 export const Viewer: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const isDemoViewer = jobId === "demo";
+  const isArtifactViewer = jobId === "artifact-demo";
   const format = (searchParams.get("format") as "glb" | "ply" | "demo") ??
-    (isDemoViewer ? "demo" : "glb");
+    (isDemoViewer ? "demo" : isArtifactViewer ? "ply" : "glb");
 
   const [job, setJob] = useState<JobResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -19,7 +23,7 @@ export const Viewer: React.FC = () => {
   const [showGrid, setShowGrid] = useState(true);
 
   useEffect(() => {
-    if (isDemoViewer) return;
+    if (isDemoViewer || isArtifactViewer) return;
     if (!jobId) return;
     (async () => {
       try {
@@ -29,7 +33,7 @@ export const Viewer: React.FC = () => {
         setError(err?.message ?? "Failed to load job");
       }
     })();
-  }, [isDemoViewer, jobId]);
+  }, [isDemoViewer, isArtifactViewer, jobId]);
 
   const switchFormat = (f: "glb" | "ply" | "demo") => {
     setSearchParams({ format: f });
@@ -84,6 +88,72 @@ export const Viewer: React.FC = () => {
           <Viewer3D
             src="demo:excavation-layout"
             format="demo"
+            autoRotate={autoRotate}
+            showGrid={showGrid}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (isArtifactViewer) {
+    return (
+      <div className="viewer-page">
+        <div className="viewer-header">
+          <div>
+            <Link to="/assets" className="back-link">
+              ← Back to Assets
+            </Link>
+            <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginTop: "0.5rem" }}>
+              <h1 className="viewer-title">Horse Head Demo Scan</h1>
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: "0.25rem 0.6rem",
+                  borderRadius: "999px",
+                  background: "#fef3c7",
+                  color: "#92400e",
+                  fontSize: "0.8rem",
+                  fontWeight: 700,
+                }}
+              >
+                PLY
+              </span>
+            </div>
+            <p style={{ margin: "0.25rem 0 0 0", color: "#64748b", fontSize: "0.875rem" }}>
+              Low-poly horse-head artifact based on your uploaded photo.
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <button
+              className={`tool-btn ${autoRotate ? "active" : ""}`}
+              onClick={() => setAutoRotate((v) => !v)}
+            >
+              ⟳ Auto-Rotate
+            </button>
+            <button
+              className={`tool-btn ${showGrid ? "active" : ""}`}
+              onClick={() => setShowGrid((v) => !v)}
+            >
+              ⊞ Grid
+            </button>
+            <a
+              href={ARTIFACT_DEMO_PLY_URL}
+              className="btn btn-primary"
+              download
+              target="_blank"
+              rel="noreferrer"
+            >
+              ⬇ Download PLY
+            </a>
+          </div>
+        </div>
+
+        <div className="viewer-body">
+          <Viewer3D
+            src={ARTIFACT_VIEW_SRC}
+            format="ply"
             autoRotate={autoRotate}
             showGrid={showGrid}
           />

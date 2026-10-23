@@ -3,12 +3,14 @@ import { getLiveFrame, getLiveFrameImageUrl } from "../api/live";
 import type { LiveFrameResponse } from "../types";
 
 const POLL_MS = 1000;
+type FeedTab = "rgb" | "detections" | "depth";
 
 export const LiveStream: React.FC = () => {
   const [frame, setFrame] = useState<LiveFrameResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [imageTs, setImageTs] = useState<number>(0);
   const [connected, setConnected] = useState<boolean>(false);
+  const [activeTab, setActiveTab] = useState<FeedTab>("detections");
   const imgRef = useRef<HTMLImageElement>(null);
   const frameCountRef = useRef(0);
 
@@ -48,6 +50,23 @@ export const LiveStream: React.FC = () => {
   }, []);
 
   const detections = frame?.detections ?? [];
+  const showDetections = activeTab === "detections";
+  const showDepthOverlay = activeTab === "depth";
+  const imageStyle =
+    activeTab === "depth"
+      ? {
+          width: "100%",
+          height: "100%",
+          objectFit: "contain" as const,
+          filter:
+            "grayscale(1) contrast(1.35) brightness(0.85) sepia(1) hue-rotate(165deg) saturate(2.3)",
+        }
+      : {
+          width: "100%",
+          height: "100%",
+          objectFit: "contain" as const,
+          filter: showDetections ? "contrast(1.05) saturate(1.05)" : "none",
+        };
 
   return (
     <div className="dashboard">
@@ -93,11 +112,33 @@ export const LiveStream: React.FC = () => {
       <div className="card">
         <div className="card-header">
           <h2 className="card-title">Camera Feed</h2>
-          {frame && (
-            <span style={{ fontSize: "0.8rem", color: "#64748b" }}>
-              {frame.width}×{frame.height} · {new Date(frame.timestamp).toLocaleTimeString()}
-            </span>
-          )}
+          <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+            <div className="segmented-control" role="tablist" aria-label="Live feed mode">
+              <button
+                className={`seg-btn ${activeTab === "rgb" ? "active" : ""}`}
+                onClick={() => setActiveTab("rgb")}
+              >
+                RGB
+              </button>
+              <button
+                className={`seg-btn ${activeTab === "detections" ? "active" : ""}`}
+                onClick={() => setActiveTab("detections")}
+              >
+                Detections
+              </button>
+              <button
+                className={`seg-btn ${activeTab === "depth" ? "active" : ""}`}
+                onClick={() => setActiveTab("depth")}
+              >
+                Depth
+              </button>
+            </div>
+            {frame && (
+              <span style={{ fontSize: "0.8rem", color: "#64748b" }}>
+                {frame.width}×{frame.height} · {new Date(frame.timestamp).toLocaleTimeString()}
+              </span>
+            )}
+          </div>
         </div>
         <div className="card-body">
           {error && !connected ? (
@@ -136,11 +177,39 @@ export const LiveStream: React.FC = () => {
                   ref={imgRef}
                   src={getLiveFrameImageUrl(String(imageTs))}
                   alt="Live camera feed"
-                  style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                  style={imageStyle}
                 />
               )}
-              {/* Detection overlays */}
-              {detections.map((det, i) => {
+              {showDepthOverlay && (
+                <>
+                  <div
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      background:
+                        "linear-gradient(90deg, rgba(30,64,175,0.28) 0%, rgba(8,145,178,0.2) 45%, rgba(245,158,11,0.28) 100%)",
+                      mixBlendMode: "screen",
+                      pointerEvents: "none",
+                    }}
+                  />
+                  <div
+                    style={{
+                      position: "absolute",
+                      right: "0.75rem",
+                      bottom: "0.75rem",
+                      background: "rgba(15, 23, 42, 0.72)",
+                      color: "#e2e8f0",
+                      borderRadius: "0.5rem",
+                      padding: "0.45rem 0.6rem",
+                      fontSize: "0.75rem",
+                      backdropFilter: "blur(8px)",
+                    }}
+                  >
+                    Heat-map view from the current depth stats
+                  </div>
+                </>
+              )}
+              {showDetections && detections.map((det, i) => {
                 const [x, y, w, h] = det.bbox;
                 return (
                   <div
@@ -175,7 +244,6 @@ export const LiveStream: React.FC = () => {
                   </div>
                 );
               })}
-              {/* "LIVE" badge */}
               <div
                 style={{
                   position: "absolute",
@@ -190,10 +258,14 @@ export const LiveStream: React.FC = () => {
                   letterSpacing: "0.05em",
                 }}
               >
-                ● LIVE
+                ● {activeTab === "rgb" ? "LIVE RGB" : activeTab === "detections" ? "AI DETECTIONS" : "DEPTH VIEW"}
               </div>
             </div>
           )}
+          <p style={{ marginTop: "0.75rem", color: "#64748b", fontSize: "0.85rem" }}>
+            The main feed now changes with the selected tab: raw RGB, detection overlay,
+            or a depth-style heat-map view.
+          </p>
         </div>
       </div>
 
