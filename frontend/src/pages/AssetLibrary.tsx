@@ -4,7 +4,7 @@ import { formatBytes, getGlbUrl, getPlyUrl, getHealth, listAssets } from "../api
 import { getJob } from "../api/jobs";
 import type { AssetInfo, JobResponse } from "../types";
 
-const ARTIFACT_DEMO_PLY_URL = "/demo/artifact-demo.ply?v=horse-side-profile-2";
+const ARTIFACT_DEMO_PLY_URL = "/demo/artifact.ply?v=uploaded-artifact-1";
 
 interface AssetGroup {
   job_id: string;
@@ -144,7 +144,7 @@ export const AssetLibrary: React.FC = () => {
               <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>🗿</div>
               <div style={{ fontWeight: 700, color: "#e2e8f0" }}>Artifact Scan</div>
               <div style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
-                Horse-head side profile
+                Uploaded PLY model
               </div>
             </div>
           </div>
@@ -155,18 +155,18 @@ export const AssetLibrary: React.FC = () => {
 
         <div className="asset-meta">
           <div className="asset-title-row">
-              <h3 className="asset-title">Horse Head Demo Scan</h3>
+              <h3 className="asset-title">Artifact Scan</h3>
           </div>
           <div className="asset-sub">
             <span>Built into frontend</span>
             <span>·</span>
-            <span>Presentation scan</span>
+            <span>Uploaded model</span>
           </div>
 
           <div className="asset-stats">
-            <span>🧪 Based on your horse-head artifact</span>
-            <span>📦 Clean ASCII side-profile PLY</span>
-            <span>🎭 Presentation-ready</span>
+            <span>📦 Loaded from `artifact.ply`</span>
+            <span>🗿 Uploaded artifact mesh</span>
+            <span>🔎 Ready to inspect</span>
           </div>
 
           <div className="asset-actions">

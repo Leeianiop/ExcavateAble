@@ -6,8 +6,7 @@ import { getJob } from "../api/jobs";
 import { getGlbUrl, getPlyUrl } from "../api/assets";
 import type { JobResponse } from "../types";
 
-const ARTIFACT_DEMO_PLY_URL = "/demo/artifact-demo.ply?v=horse-side-profile-2";
-const ARTIFACT_VIEW_SRC = "demo:horse-head";
+const ARTIFACT_DEMO_PLY_URL = "/demo/artifact.ply?v=uploaded-artifact-1";
 
 export const Viewer: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
@@ -105,7 +104,7 @@ export const Viewer: React.FC = () => {
               ← Back to Assets
             </Link>
             <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginTop: "0.5rem" }}>
-              <h1 className="viewer-title">Horse Head Demo Scan</h1>
+              <h1 className="viewer-title">Artifact Scan</h1>
               <span
                 style={{
                   display: "inline-flex",
@@ -122,7 +121,7 @@ export const Viewer: React.FC = () => {
               </span>
             </div>
             <p style={{ margin: "0.25rem 0 0 0", color: "#64748b", fontSize: "0.875rem" }}>
-              Low-poly horse-head artifact based on your uploaded photo.
+              3D artifact model loaded from your uploaded PLY file.
             </p>
           </div>
           <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -152,7 +151,7 @@ export const Viewer: React.FC = () => {
 
         <div className="viewer-body">
           <Viewer3D
-            src={ARTIFACT_VIEW_SRC}
+            src={ARTIFACT_DEMO_PLY_URL}
             format="ply"
             autoRotate={autoRotate}
             showGrid={showGrid}
