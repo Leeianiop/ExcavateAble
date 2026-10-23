@@ -111,6 +111,22 @@ def _normalize_gas(value: str) -> str:
         return text  # unrecognised payload — show it verbatim
 
 
+def _extract_legacy_field(message: str, label: str) -> str | None:
+    """Extract ``label: value`` from legacy single-line telemetry payloads."""
+    marker = f"{label}:"
+    start = message.find(marker)
+    if start < 0:
+        return None
+
+    start += len(marker)
+    while start < len(message) and message[start] == " ":
+        start += 1
+    end = message.find(" ", start)
+    if end < 0:
+        end = len(message)
+    return message[start:end].strip()
+
+
 class RobotController:
     """Thread-safe BLE controller for one board, with a mock fallback."""
 
@@ -233,6 +249,16 @@ class RobotController:
             updates["mq5"] = _normalize_gas(message.split(":", 1)[1])
         elif message.startswith("DHT:"):
             updates["temperature"] = message.split(":", 1)[1]
+        else:
+            # Legacy firmware sometimes emits one combined status line like:
+            # "Temperature: DHT11 read failed MQ8 DO: LOW MQ5 DO: LOW"
+            mq8 = _extract_legacy_field(message, "MQ8 DO")
+            mq5 = _extract_legacy_field(message, "MQ5 DO")
+
+            if mq8 is not None:
+                updates["mq8"] = _normalize_gas(mq8)
+            if mq5 is not None:
+                updates["mq5"] = _normalize_gas(mq5)
 
         self._set(**updates)
 
