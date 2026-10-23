@@ -9,14 +9,16 @@
  * Arduino IDE settings:
  *   Board:            "ESP32C3 Dev Module"
  *   USB CDC On Boot:  Enabled
- *   Libraries:        ESP32Servo, DHT sensor library, Adafruit Unified Sensor,
- *                     Adafruit NeoPixel
+ *   Libraries:        Adafruit PWM Servo Driver, DHT sensor library,
+ *                     Adafruit Unified Sensor, Adafruit NeoPixel
  *
  * Pin map - change these if your wiring differs:
- *   GPIO0   servo 0  A0 / "P" pair (pan)      GPIO6   MQ-8 DO  (digital)
- *   GPIO1   servo 1  A1 / "P" pair (tilt)     GPIO7   MQ-5 DO  (digital)
- *   GPIO3   servo 2  A2 / "Q" pair (lift)     GPIO10  WS2812 data
- *   GPIO4   servo 3  A3 / "Q" pair (lift)     GPIO5   DHT11 data (digital)
+ *   GPIO8   I2C SDA -> PCA9685 SDA            GPIO6   MQ-8 DO  (digital)
+ *   GPIO9   I2C SCL -> PCA9685 SCL            GPIO7   MQ-5 DO  (digital)
+ *   PCA9685 ch0 servo 0  A0 / "P" pair (pan)  GPIO10  WS2812 data
+ *   PCA9685 ch1 servo 1  A1 / "P" pair (tilt) GPIO5   DHT11 data (digital)
+ *   PCA9685 ch2 servo 2  A2 / "Q" pair (lift)
+ *   PCA9685 ch3 servo 3  A3 / "Q" pair (lift)
  *
  * Command grammar (must match is_valid_command() in the backend):
  *   F B L R S          hold a direction to nudge pan/tilt, S to stop
@@ -40,13 +42,22 @@
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <DHT.h>
-#include <ESP32Servo.h>
+#include <Wire.h>
+#include <Adafruit_PWMServoDriver.h>
 
 // ------------------------------- config --------------------------------
 #define DEVICE_NAME "ESP32C3_Servo"
 
 static const uint8_t NUM_SERVOS = 4;
-static const uint8_t SERVO_PINS[NUM_SERVOS] = {0, 1, 3, 4};
+static const uint8_t SERVO_CHANNELS[NUM_SERVOS] = {0, 1, 2, 3};
+
+static const uint8_t PIN_I2C_SDA = 8;
+static const uint8_t PIN_I2C_SCL = 9;
+static const uint8_t PCA9685_ADDR = 0x40;
+
+// Typical 500us..2400us servo range at 50 Hz on a 12-bit PCA9685.
+static const uint16_t SERVO_MIN_TICKS = 102;
+static const uint16_t SERVO_MAX_TICKS = 491;
 
 static const uint8_t PIN_DHT = 5;  // DHT11 is a DIGITAL sensor - not an ADC pin
 #define DHT_TYPE DHT11
@@ -71,7 +82,7 @@ static const int HOME_ANGLE = 0;   // "D" - Lower
 #define TX_UUID "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
 
 // ------------------------------ globals --------------------------------
-Servo servos[NUM_SERVOS];
+Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(PCA9685_ADDR);
 DHT dht(PIN_DHT, DHT_TYPE);
 Adafruit_NeoPixel strip(NUM_LEDS, PIN_LED, NEO_GRB + NEO_KHZ800);
 
@@ -99,7 +110,8 @@ void setChannel(uint8_t channel, int angle) {
     return;
   }
   angles[channel] = angle;
-  servos[channel].write(angle);
+  uint16_t ticks = map(angle, 0, 180, SERVO_MIN_TICKS, SERVO_MAX_TICKS);
+  pwm.setPWM(SERVO_CHANNELS[channel], 0, ticks);
 }
 
 void setPair(uint8_t a, uint8_t b, int angle) {
@@ -295,14 +307,12 @@ void setup() {
   strip.clear();
   strip.show();
 
-  ESP32PWM::allocateTimer(0);
-  ESP32PWM::allocateTimer(1);
-  ESP32PWM::allocateTimer(2);
-  ESP32PWM::allocateTimer(3);
+  Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
+  pwm.begin();
+  pwm.setPWMFreq(50);
+  delay(10);
   for (uint8_t i = 0; i < NUM_SERVOS; i++) {
-    servos[i].setPeriodHertz(50);
-    servos[i].attach(SERVO_PINS[i], 500, 2400);
-    servos[i].write(angles[i]);
+    setChannel(i, angles[i]);
   }
 
   BLEDevice::init(DEVICE_NAME);
