@@ -1018,6 +1018,44 @@ code {
   animation: pulse-dot 1.5s infinite;
 }
 
+/* Per-board rows: one entry per connected device role (servo / sensor). */
+.robot-devices {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+}
+.robot-device {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.robot-device-text {
+  flex: 1;
+  min-width: 0;
+}
+.robot-device-role {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.robot-device-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.robot-device-status {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
 .robot-toast {
   min-height: 20px;
   margin-top: 0.75rem;

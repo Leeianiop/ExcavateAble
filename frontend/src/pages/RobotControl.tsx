@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   connectRobot,
+  connectRobotRole,
   disconnectRobot,
+  disconnectRobotRole,
   getRobotState,
   sendRobotCommand,
 } from "../api/robot";
@@ -122,12 +124,27 @@ export const RobotControl: React.FC = () => {
   useEffect(() => stopDriveTimer, [stopDriveTimer]);
 
   const handleConnect = async () => {
-    showToast("Searching for ESP32...");
+    showToast("Searching for boards...");
     try {
       const res = await connectRobot();
       showToast(res.message || "Connecting...");
     } catch (err: any) {
       showToast(err?.message ?? "Connection request failed", true);
+    }
+  };
+
+  const handleRoleToggle = async (role: string, isConnected: boolean) => {
+    showToast(isConnected ? `Disconnecting ${role}...` : `Searching for ${role}...`);
+    try {
+      const res = isConnected
+        ? await disconnectRobotRole(role)
+        : await connectRobotRole(role);
+      showToast(res.message || (isConnected ? "Disconnected" : "Connecting..."));
+    } catch (err: any) {
+      showToast(
+        err?.response?.data?.error ?? err?.message ?? "Request failed",
+        true
+      );
     }
   };
 
@@ -167,6 +184,8 @@ export const RobotControl: React.FC = () => {
   const handleServoCommit = (key: string, make: (a: number) => string) => {
     doSend(make(angles[key]));
   };
+
+  const devices = state?.devices ?? [];
 
   const sensors = [
     { label: "Temperature", value: state?.temperature ?? "--", unit: "°C" },
@@ -242,17 +261,56 @@ export const RobotControl: React.FC = () => {
               <span>{state?.status ?? "Loading..."}</span>
             </div>
 
-            {state?.device_name && (
-              <p className="robot-note" style={{ marginTop: "0.75rem" }}>
-                Peripheral: <code>{state.device_name}</code>
-              </p>
+            {devices.length > 0 ? (
+              <div className="robot-devices">
+                {devices.map((dev) => (
+                  <div className="robot-device" key={dev.role}>
+                    <span className={`robot-dot ${dev.connected ? "on" : ""}`} />
+                    <div className="robot-device-text">
+                      <div className="robot-device-role">{dev.role}</div>
+                      <div className="robot-device-name">
+                        {dev.device_name ? (
+                          <code>{dev.device_name}</code>
+                        ) : (
+                          dev.status
+                        )}
+                      </div>
+                      {dev.device_name && (
+                        <div className="robot-device-status">{dev.status}</div>
+                      )}
+                    </div>
+                    <button
+                      className="chip-btn"
+                      onClick={() => handleRoleToggle(dev.role, dev.connected)}
+                      disabled={dev.connecting}
+                    >
+                      {dev.connecting
+                        ? "..."
+                        : dev.connected
+                          ? "Disconnect"
+                          : "Connect"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              state?.device_name && (
+                <p className="robot-note" style={{ marginTop: "0.75rem" }}>
+                  Peripheral: <code>{state.device_name}</code>
+                </p>
+              )
             )}
 
             <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
               <button
                 className="btn btn-primary"
                 onClick={handleConnect}
-                disabled={connected || (state?.connecting ?? false)}
+                disabled={
+                  (state?.connecting ?? false) ||
+                  (devices.length > 0
+                    ? devices.every((d) => d.connected)
+                    : connected)
+                }
               >
                 Connect
               </button>

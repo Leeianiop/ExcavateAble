@@ -11,8 +11,18 @@ export async function connectRobot(): Promise<RobotActionResponse> {
   return res.data;
 }
 
+export async function connectRobotRole(role: string): Promise<RobotActionResponse> {
+  const res = await apiClient.post<RobotActionResponse>(`/robot/connect/${role}`);
+  return res.data;
+}
+
 export async function disconnectRobot(): Promise<RobotActionResponse> {
   const res = await apiClient.post<RobotActionResponse>("/robot/disconnect");
+  return res.data;
+}
+
+export async function disconnectRobotRole(role: string): Promise<RobotActionResponse> {
+  const res = await apiClient.post<RobotActionResponse>(`/robot/disconnect/${role}`);
   return res.data;
 }
 

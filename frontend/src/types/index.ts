@@ -160,6 +160,19 @@ export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
 // ------------------------------------------------------------------
 // Robot control (ESP32-C3 over BLE)
 // ------------------------------------------------------------------
+export interface RobotDeviceState {
+  role: string;
+  device_name: string;
+  address: string;
+  connected: boolean;
+  connecting: boolean;
+  status: string;
+  temperature: string;
+  humidity: string;
+  mq8: string;
+  mq5: string;
+}
+
 export interface RobotState {
   connected: boolean;
   connecting: boolean;
@@ -172,6 +185,7 @@ export interface RobotState {
   last_command: string;
   mock: boolean;
   device_name: string;
+  devices: RobotDeviceState[];
 }
 
 export interface RobotActionResponse {

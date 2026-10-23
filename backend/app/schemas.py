@@ -130,6 +130,21 @@ class LiveFrameResponse(BaseModel):
 # ------------------------------------------------------------------
 # Robot control (ESP32-C3 over BLE)
 # ------------------------------------------------------------------
+class RobotDeviceState(BaseModel):
+    """Connection + telemetry state for a single board (one BLE link)."""
+
+    role: str = ""
+    device_name: str = ""
+    address: str = ""
+    connected: bool = False
+    connecting: bool = False
+    status: str = "Not connected"
+    temperature: str = "--"
+    humidity: str = "--"
+    mq8: str = "--"
+    mq5: str = "--"
+
+
 class RobotState(BaseModel):
     connected: bool = False
     connecting: bool = False
@@ -142,6 +157,7 @@ class RobotState(BaseModel):
     last_command: str = ""
     mock: bool = False
     device_name: str = ""
+    devices: list[RobotDeviceState] = []
 
 
 class RobotCommandRequest(BaseModel):

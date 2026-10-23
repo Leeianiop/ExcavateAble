@@ -13,6 +13,10 @@ capabilities are available through the main backend API:
 The BLE client runs on its own asyncio event loop in a background thread so the
 connection stays alive independently of HTTP request handling.
 
+Several boards can be connected at the same time — one :class:`RobotController`
+per *role* (``servo`` for actuators, ``sensor`` for telemetry), owned by
+:class:`RobotManager`.
+
 If ``bleak`` is not installed, or ``ROBOT_MOCK`` is set, the controller falls
 back to a mock mode that simulates sensor readings and accepts commands — the
 same graceful-degradation approach used elsewhere in the project.
@@ -26,7 +30,7 @@ import os
 import random
 import threading
 import time
-from typing import Any
+from typing import Any, Callable
 
 try:  # optional dependency — the backend must import without it
     from bleak import BleakClient, BleakScanner  # type: ignore
@@ -43,6 +47,17 @@ logger = logging.getLogger(__name__)
 # (the standalone prototype was written against "ESP32C3_Sensors", but the
 # board advertises "ESP32C3_Servo"), so accept any of them.
 DEFAULT_DEVICE_NAMES = ("ESP32C3_Sensors", "ESP32C3_Servo")
+
+# Roles, so two boards can be connected at the same time. The servo board takes
+# actuator commands, the sensor board streams telemetry.
+SERVO_ROLE = "servo"
+SENSOR_ROLE = "sensor"
+
+# Advertising name(s) per role. Each role keeps its own BLE link.
+DEFAULT_ROLES: dict[str, tuple[str, ...]] = {
+    SERVO_ROLE: ("ESP32C3_Servo",),
+    SENSOR_ROLE: ("ESP32C3_Sensors",),
+}
 
 SERVICE_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
 RX_UUID = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
@@ -77,12 +92,15 @@ def is_valid_command(command: str) -> bool:
 
 
 class RobotController:
-    """Thread-safe BLE controller with a mock fallback."""
+    """Thread-safe BLE controller for one board, with a mock fallback."""
 
     def __init__(
         self,
         device_names: tuple[str, ...] | None = None,
         force_mock: bool | None = None,
+        role: str = "",
+        exclude: Callable[[], set[str]] | None = None,
+        other_names: tuple[str, ...] = (),
     ) -> None:
         if device_names is None:
             env_names = os.getenv("ROBOT_DEVICE_NAME", "")
@@ -92,6 +110,12 @@ class RobotController:
 
         self.device_names = tuple(device_names)
         self.device_name = self.device_names[0]
+        self.role = role
+
+        # Addresses held by sibling roles, and the names those roles match, so
+        # this controller never claims another board's hardware.
+        self._exclude = exclude
+        self._other_names = tuple(other_names)
 
         if force_mock is None:
             force_mock = os.getenv("ROBOT_MOCK", "").strip().lower() in {"1", "true", "yes", "on"}
@@ -115,6 +139,8 @@ class RobotController:
             "last_command": "",
             "mock": self.mock,
             "device_name": self.device_name,
+            "role": self.role,
+            "address": "",
         }
 
         if self.mock:
@@ -244,7 +270,11 @@ class RobotController:
 
     def _pick_device(self, devices: list[Any]) -> Any | None:
         """Return the ESP32 from a scan result, tolerating firmware name drift."""
-        named = {d.name.lower(): d for d in devices if d.name}
+        blocked = self._exclude() if self._exclude is not None else set()
+        available = [
+            d for d in devices if getattr(d, "address", "") not in blocked
+        ]
+        named = {d.name.lower(): d for d in available if d.name}
 
         for accepted in self.device_names:
             if accepted.lower() in named:
@@ -252,10 +282,16 @@ class RobotController:
 
         # Firmware builds have shipped under several ESP32C3_* names; if none of
         # the configured names matched, fall back to any ESP32 peripheral rather
-        # than silently reporting "not found".
+        # than silently reporting "not found". Names belonging to a sibling role
+        # are skipped so two boards are never assigned to the same role.
+        reserved = {name.lower() for name in self._other_names}
         for name, device in named.items():
-            if name.startswith("esp32"):
-                logger.info("Using ESP32 candidate %r (not an exact name match)", name)
+            if name.startswith("esp32") and name not in reserved:
+                logger.info(
+                    "Using ESP32 candidate %r for role %r (not an exact name match)",
+                    name,
+                    self.role,
+                )
                 return device
 
         return None
@@ -338,8 +374,9 @@ class RobotController:
                 connecting=False,
                 status=f"Connected to {device.name}",
                 device_name=device.name,
+                address=getattr(device, "address", ""),
             )
-            logger.info("Connected to %s", device.name)
+            logger.info("Connected to %s (role=%s)", device.name, self.role or "-")
 
             # Keep the link alive until the peripheral drops or we disconnect.
             while client.is_connected:
@@ -361,6 +398,7 @@ class RobotController:
             self._set(
                 connected=False,
                 connecting=False,
+                address="",
                 status="Disconnected" if status.startswith("Connected") else status,
             )
 
@@ -383,7 +421,7 @@ class RobotController:
                 logger.warning("Robot disconnect error: %s", exc)
 
         self._client = None
-        self._set(connected=False, connecting=False, status="Disconnected")
+        self._set(connected=False, connecting=False, address="", status="Disconnected")
 
     # ------------------------------------------------------------------
     # Commands
@@ -410,10 +448,238 @@ class RobotController:
         await client.write_gatt_char(RX_UUID, command.encode("utf-8"), response=False)
 
 
+def command_role(command: str) -> str:
+    """Return the role that handles a command.
+
+    Every command in the grammar drives an actuator (movement, servo or LED),
+    so they all belong to the servo board. The sensor board is telemetry-only.
+    """
+    return SERVO_ROLE
+
+
+class RobotManager:
+    """Owns one :class:`RobotController` per role so several boards run at once.
+
+    Boards are connected one at a time. The Windows WinRT backend is noticeably
+    flakier when two GATT connections are opened in parallel, and connecting in
+    sequence keeps name-to-role assignment deterministic.
+    """
+
+    def __init__(
+        self,
+        roles: dict[str, tuple[str, ...]] | None = None,
+        force_mock: bool | None = None,
+    ) -> None:
+        self._roles: dict[str, tuple[str, ...]] = dict(roles or DEFAULT_ROLES)
+        self._controllers: dict[str, RobotController] = {}
+        self._last_command = ""
+        self._connecting_thread: threading.Thread | None = None
+
+        for role, names in self._roles.items():
+            other_names = tuple(
+                name
+                for other_role, other in self._roles.items()
+                if other_role != role
+                for name in other
+            )
+            self._controllers[role] = RobotController(
+                device_names=tuple(names),
+                force_mock=force_mock,
+                role=role,
+                exclude=self._claimed_addresses,
+                other_names=other_names,
+            )
+
+    # ------------------------------------------------------------------
+    # Introspection
+    # ------------------------------------------------------------------
+    @property
+    def roles(self) -> tuple[str, ...]:
+        return tuple(self._controllers)
+
+    def get(self, role: str) -> RobotController | None:
+        return self._controllers.get(role)
+
+    def _claimed_addresses(self) -> set[str]:
+        """Addresses already held by a connected role.
+
+        Without this, a role whose exact name is missing could claim the *other*
+        board through the generic ``esp32*`` fallback in ``_pick_device``.
+        """
+        claimed: set[str] = set()
+        for controller in self._controllers.values():
+            state = controller.state()
+            address = state.get("address") or ""
+            if address and state.get("connected"):
+                claimed.add(address)
+        return claimed
+
+    # ------------------------------------------------------------------
+    # Aggregated state
+    # ------------------------------------------------------------------
+    def state(self) -> dict[str, Any]:
+        devices: list[dict[str, Any]] = []
+        for role, controller in self._controllers.items():
+            state = controller.state()
+            devices.append(
+                {
+                    "role": role,
+                    "device_name": state.get("device_name", ""),
+                    "address": state.get("address", ""),
+                    "connected": bool(state.get("connected")),
+                    "connecting": bool(state.get("connecting")),
+                    "status": state.get("status", "Not connected"),
+                    "temperature": state.get("temperature", "--"),
+                    "humidity": state.get("humidity", "--"),
+                    "mq8": state.get("mq8", "--"),
+                    "mq5": state.get("mq5", "--"),
+                }
+            )
+
+        connected = [d for d in devices if d["connected"]]
+        if connected:
+            status = f"{len(connected)}/{len(devices)} devices connected"
+        else:
+            # Surface the most informative per-device message ("not found",
+            # "BLE error: …") instead of a bare "Not connected".
+            status = next(
+                (
+                    d["status"]
+                    for d in devices
+                    if d["status"] and d["status"] not in {"Not connected", "Disconnected"}
+                ),
+                "Not connected",
+            )
+
+        # Telemetry prefers the sensor board, but falls back to any board that is
+        # actually reporting (a single-ESP setup, or the servo sketch's DHT11).
+        ordered = sorted(devices, key=lambda d: d["role"] != SENSOR_ROLE)
+
+        def pick(field: str) -> str:
+            for device in ordered:
+                value = device.get(field)
+                if device["connected"] and value and value != "--":
+                    return str(value)
+            return "--"
+
+        names = [d["device_name"] for d in connected if d["device_name"]]
+
+        return {
+            "connected": bool(connected),
+            "connecting": any(d["connecting"] for d in devices),
+            "status": status,
+            "temperature": pick("temperature"),
+            "humidity": pick("humidity"),
+            "mq8": pick("mq8"),
+            "mq5": pick("mq5"),
+            "last_message": "",
+            "last_command": self._last_command,
+            "mock": all(c.mock for c in self._controllers.values()),
+            "device_name": ", ".join(names),
+            "devices": devices,
+        }
+
+    # ------------------------------------------------------------------
+    # Connect / disconnect
+    # ------------------------------------------------------------------
+    def connect_all(self) -> dict[str, Any]:
+        """Connect every role. Returns immediately — poll ``state()`` for progress."""
+        if self._connecting_thread is not None and self._connecting_thread.is_alive():
+            return {"ok": True, "message": "Connection already in progress"}
+
+        self._connecting_thread = threading.Thread(
+            target=lambda: asyncio.run(self._connect_all_async()), daemon=True
+        )
+        self._connecting_thread.start()
+        return {
+            "ok": True,
+            "message": f"Searching for {len(self._controllers)} boards…",
+        }
+
+    async def _connect_all_async(self) -> None:
+        for controller in self._controllers.values():
+            state = controller.state()
+            if state["connected"] or state["connecting"]:
+                continue
+            await controller.connect()
+            await self._wait_settled(controller)
+
+    @staticmethod
+    async def _wait_settled(controller: RobotController, timeout: float = 75.0) -> None:
+        """Block until a controller stops scanning, so the next role starts its
+        scan only after this one has claimed (or missed) its board."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if not controller.state()["connecting"]:
+                return
+            await asyncio.sleep(0.25)
+
+    def disconnect_all(self) -> dict[str, Any]:
+        """Drop every link. Returns immediately — each server-side write is async."""
+        threading.Thread(
+            target=lambda: asyncio.run(self._disconnect_all_async()), daemon=True
+        ).start()
+        return {"ok": True, "message": "Disconnecting…"}
+
+    async def _disconnect_all_async(self) -> None:
+        for role, controller in self._controllers.items():
+            try:
+                await controller.disconnect()
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("Disconnect failed for role %s: %s", role, exc)
+
+    # ------------------------------------------------------------------
+    # Commands
+    # ------------------------------------------------------------------
+    def resolve_target(
+        self, command: str, role: str | None = None
+    ) -> RobotController | None:
+        """Pick the board a command should go to."""
+        if role is not None:
+            controller = self._controllers.get(role)
+            if controller is None or not controller.state()["connected"]:
+                return None
+            return controller
+
+        controller = self._controllers.get(command_role(command))
+        if controller is not None and controller.state()["connected"]:
+            return controller
+
+        # Single-board setups keep working: if the servo board is offline, send
+        # to whatever is connected rather than refusing outright.
+        for candidate in self._controllers.values():
+            if candidate.state()["connected"]:
+                logger.info(
+                    "Routing %r to role %r (its default role is offline)",
+                    command,
+                    candidate.role,
+                )
+                return candidate
+
+        return None
+
+    async def send(self, command: str, role: str | None = None) -> dict[str, Any]:
+        target = self.resolve_target(command, role)
+        if target is None:
+            if role is not None:
+                return {"ok": False, "error": f"'{role}' device is not connected"}
+            return {"ok": False, "error": "No ESP32 is connected"}
+
+        result = await target.send(command)
+        if result.get("ok"):
+            self._last_command = command
+        return result
+
+
 __all__ = [
     "RobotController",
+    "RobotManager",
     "is_valid_command",
+    "command_role",
     "DEFAULT_DEVICE_NAMES",
+    "DEFAULT_ROLES",
+    "SERVO_ROLE",
+    "SENSOR_ROLE",
     "SERVICE_UUID",
     "RX_UUID",
     "TX_UUID",
