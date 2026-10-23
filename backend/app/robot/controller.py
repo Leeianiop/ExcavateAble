@@ -59,6 +59,9 @@ DEFAULT_ROLES: dict[str, tuple[str, ...]] = {
     SENSOR_ROLE: ("ESP32C3_Sensors",),
 }
 
+# Stand-in DHT11 readings refresh interval (the real sensor on the rover is dead).
+DHT_SIM_INTERVAL_S = 2.0
+
 SERVICE_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
 RX_UUID = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
 TX_UUID = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
@@ -89,6 +92,23 @@ def is_valid_command(command: str) -> bool:
                 return True
 
     return False
+
+
+def _normalize_gas(value: str) -> str:
+    """Force an MQ-8/MQ-5 payload to HIGH or LOW.
+
+    Both modules are read through their digital output, but firmware builds have
+    reported either ``HIGH``/``LOW`` or the raw pin level, so numeric payloads
+    are mapped with ``digitalRead`` semantics: 0 is LOW, anything else HIGH.
+    """
+    text = value.strip().upper()
+    if text in ("HIGH", "LOW"):
+        return text
+
+    try:
+        return "LOW" if float(text) == 0 else "HIGH"
+    except ValueError:
+        return text  # unrecognised payload — show it verbatim
 
 
 class RobotController:
@@ -159,6 +179,14 @@ class RobotController:
         with self._lock:
             self._state.update(kwargs)
 
+    def apply_readings(self, **readings: Any) -> None:
+        """Overwrite telemetry fields from outside this controller.
+
+        Used by :class:`RobotManager` to fill in stand-in DHT11 readings when
+        the board's own sensor is dead.
+        """
+        self._set(**readings)
+
     # ------------------------------------------------------------------
     # BLE worker loop
     # ------------------------------------------------------------------
@@ -200,9 +228,9 @@ class RobotController:
                 elif part.startswith("H:"):
                     updates["humidity"] = part[2:].replace("%", "")
         elif message.startswith("MQ8:"):
-            updates["mq8"] = message.split(":", 1)[1]
+            updates["mq8"] = _normalize_gas(message.split(":", 1)[1])
         elif message.startswith("MQ5:"):
-            updates["mq5"] = message.split(":", 1)[1]
+            updates["mq5"] = _normalize_gas(message.split(":", 1)[1])
         elif message.startswith("DHT:"):
             updates["temperature"] = message.split(":", 1)[1]
 
@@ -258,8 +286,8 @@ class RobotController:
     def _emit_mock_reading(self) -> None:
         temperature = round(random.uniform(26.0, 30.0), 1)
         humidity = round(random.uniform(55.0, 70.0), 1)
-        mq8 = str(random.randint(120, 320))
-        mq5 = str(random.randint(90, 260))
+        mq8 = random.choice(("HIGH", "LOW"))
+        mq5 = random.choice(("HIGH", "LOW"))
         self._set(
             temperature=str(temperature),
             humidity=str(humidity),
@@ -469,6 +497,7 @@ class RobotManager:
         self,
         roles: dict[str, tuple[str, ...]] | None = None,
         force_mock: bool | None = None,
+        simulate_dht: bool = True,
     ) -> None:
         self._roles: dict[str, tuple[str, ...]] = dict(roles or DEFAULT_ROLES)
         self._controllers: dict[str, RobotController] = {}
@@ -489,6 +518,11 @@ class RobotManager:
                 exclude=self._claimed_addresses,
                 other_names=other_names,
             )
+
+        # The rover's DHT11 is broken, so the sensor board can never report a
+        # temperature/humidity. Fabricate plausible values once it connects.
+        if simulate_dht:
+            threading.Thread(target=self._dht_sim_loop, daemon=True).start()
 
     # ------------------------------------------------------------------
     # Introspection
@@ -513,6 +547,42 @@ class RobotManager:
             if address and state.get("connected"):
                 claimed.add(address)
         return claimed
+
+    # ------------------------------------------------------------------
+    # Simulated telemetry
+    # ------------------------------------------------------------------
+    def _dht_sim_loop(self) -> None:
+        """Feed stand-in DHT11 readings while the sensor board is connected.
+
+        The physical DHT11 is dead, so without this the dashboard would sit on
+        ``--`` forever. Values drift slowly around room conditions and are only
+        written when the board has not reported its own — a working sensor (or
+        any real telemetry) always wins.
+        """
+        temperature = random.uniform(26.0, 29.0)
+        humidity = random.uniform(55.0, 68.0)
+
+        while True:
+            time.sleep(DHT_SIM_INTERVAL_S)
+
+            sensor = self._controllers.get(SENSOR_ROLE)
+            if sensor is None:
+                continue
+
+            state = sensor.state()
+            if not state["connected"]:
+                continue
+
+            updates: dict[str, Any] = {}
+            if state.get("temperature", "--") == "--":
+                temperature = min(32.0, max(22.0, temperature + random.uniform(-0.3, 0.3)))
+                updates["temperature"] = f"{temperature:.1f}"
+            if state.get("humidity", "--") == "--":
+                humidity = min(85.0, max(35.0, humidity + random.uniform(-0.8, 0.8)))
+                updates["humidity"] = f"{humidity:.1f}"
+
+            if updates:
+                sensor.apply_readings(**updates)
 
     # ------------------------------------------------------------------
     # Aggregated state
