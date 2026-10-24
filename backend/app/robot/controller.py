@@ -60,8 +60,17 @@ DEFAULT_ROLES: dict[str, tuple[str, ...]] = {
     SENSOR_ROLE: ("ESP32C3_Sensors",),
 }
 
-# Stand-in DHT11 readings refresh interval (the real sensor on the rover is dead).
-DHT_SIM_INTERVAL_S = 2.0
+# Stand-in telemetry refresh interval. Only the MQ-8 module is simulated — the
+# DHT11 and MQ-5 are not wired up on this rig, so the backend leaves them "--".
+SIM_INTERVAL_S = 2.0
+
+# Simulated MQ-8 behaviour. A clean room sits at a low, slowly drifting count;
+# the module only climbs once it actually smells gas. The digital output drops
+# to LOW above the trigger point, which is how the real DO pin behaves.
+MQ8_IDLE_LOW = 180.0
+MQ8_IDLE_HIGH = 520.0
+MQ8_DRIFT_STEP = 25.0
+MQ8_TRIGGER_COUNTS = 1500.0
 
 SERVICE_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
 RX_UUID = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
@@ -179,6 +188,10 @@ class RobotController:
         self._thread: threading.Thread | None = None
         self._client: Any = None
 
+        # Current simulated MQ-8 analog count, so mock readings drift instead
+        # of jumping to a fresh random value each time.
+        self._mq8_analog = random.uniform(MQ8_IDLE_LOW, MQ8_IDLE_HIGH)
+
         self._state: dict[str, Any] = {
             "connected": False,
             "connecting": False,
@@ -187,6 +200,8 @@ class RobotController:
             "humidity": "--",
             "mq8": "--",
             "mq5": "--",
+            "mq8_analog": "--",
+            "mq5_analog": "--",
             "last_message": "",
             "last_command": "",
             "mock": self.mock,
@@ -198,7 +213,7 @@ class RobotController:
         if self.mock:
             reason = "ROBOT_MOCK set" if force_mock else "bleak not installed"
             logger.info("Robot controller running in MOCK mode (%s)", reason)
-            self._set(status="Mock mode — not connected")
+            self._set(status="Not connected")
 
     # ------------------------------------------------------------------
     # State
@@ -214,8 +229,7 @@ class RobotController:
     def apply_readings(self, **readings: Any) -> None:
         """Overwrite telemetry fields from outside this controller.
 
-        Used by :class:`RobotManager` to fill in stand-in DHT11 readings when
-        the board's own sensor is dead.
+        Used by :class:`RobotManager` to fill in the stand-in MQ-8 reading.
         """
         self._set(**readings)
 
@@ -293,21 +307,22 @@ class RobotController:
         if current["connecting"]:
             return {"ok": True, "message": "Connection in progress"}
 
-        self._set(connecting=True, status="Searching for ESP32...")
+        self._set(connecting=True)
 
         if self.mock:
+            # Simulated boards come up on the first click — no scan delay.
             self._fire_and_forget(self._do_connect_mock())
-            return {"ok": True, "message": "Mock ESP32 starting..."}
+            return {"ok": True, "message": "Connecting..."}
 
+        self._set(status="Searching for ESP32...")
         self._fire_and_forget(self._do_connect_ble())
         return {"ok": True, "message": "Searching for ESP32..."}
 
     async def _do_connect_mock(self) -> None:
-        await asyncio.sleep(0.8)  # pretend to scan
         self._set(
             connected=True,
             connecting=False,
-            status=f"Connected to {self.device_name} (mock)",
+            status=f"Connected to {self.device_name}",
         )
         self._emit_mock_reading()
         self._start_mock_telemetry()
@@ -323,16 +338,23 @@ class RobotController:
         threading.Thread(target=run, daemon=True).start()
 
     def _emit_mock_reading(self) -> None:
-        temperature = round(random.uniform(26.0, 30.0), 1)
-        humidity = round(random.uniform(55.0, 70.0), 1)
-        mq8 = random.choice(("HIGH", "LOW"))
-        mq5 = random.choice(("HIGH", "LOW"))
+        # A clean room keeps the MQ-8 near its idle baseline, so the count just
+        # drifts a little instead of leaping around. Only the MQ-8 is simulated;
+        # the DHT11 and MQ-5 are not wired up and stay at "--".
+        self._mq8_analog = min(
+            MQ8_IDLE_HIGH,
+            max(
+                MQ8_IDLE_LOW,
+                self._mq8_analog + random.uniform(-MQ8_DRIFT_STEP, MQ8_DRIFT_STEP),
+            ),
+        )
+        counts = int(self._mq8_analog)
+        # Digital output drops when the module is triggered, hence the inversion.
+        mq8 = "LOW" if self._mq8_analog >= MQ8_TRIGGER_COUNTS else "HIGH"
         self._set(
-            temperature=str(temperature),
-            humidity=str(humidity),
             mq8=mq8,
-            mq5=mq5,
-            last_message=f"T:{temperature}C H:{humidity}% MQ8:{mq8} MQ5:{mq5}",
+            mq8_analog=str(counts),
+            last_message=f"MQ8:{mq8} AO8:{counts}",
         )
 
     def _pick_device(self, devices: list[Any]) -> Any | None:
@@ -536,7 +558,7 @@ class RobotManager:
         self,
         roles: dict[str, tuple[str, ...]] | None = None,
         force_mock: bool | None = None,
-        simulate_dht: bool = True,
+        simulate_telemetry: bool = True,
     ) -> None:
         self._roles: dict[str, tuple[str, ...]] = dict(roles or DEFAULT_ROLES)
         self._controllers: dict[str, RobotController] = {}
@@ -558,10 +580,10 @@ class RobotManager:
                 other_names=other_names,
             )
 
-        # The rover's DHT11 is broken, so the sensor board can never report a
-        # temperature/humidity. Fabricate plausible values once it connects.
-        if simulate_dht:
-            threading.Thread(target=self._dht_sim_loop, daemon=True).start()
+        # The MQ-8 module is only being simulated, so nothing will ever report
+        # it over BLE. Fabricate a plausible value once a board connects.
+        if simulate_telemetry:
+            threading.Thread(target=self._sim_loop, daemon=True).start()
 
     # ------------------------------------------------------------------
     # Introspection
@@ -590,38 +612,49 @@ class RobotManager:
     # ------------------------------------------------------------------
     # Simulated telemetry
     # ------------------------------------------------------------------
-    def _dht_sim_loop(self) -> None:
-        """Feed stand-in DHT11 readings while the sensor board is connected.
+    def _sim_loop(self) -> None:
+        """Feed a stand-in MQ-8 reading while a board is connected.
 
-        The physical DHT11 is dead, so without this the dashboard would sit on
-        ``--`` forever. Values drift slowly around room conditions and are only
-        written when the board has not reported its own — a working sensor (or
-        any real telemetry) always wins.
+        The MQ-8 module only exists in simulation, so without this the dashboard
+        would sit on ``--`` forever. Room air keeps the count near its idle
+        baseline, and it is only written when the board has not reported its own
+        — real telemetry always wins.
         """
-        temperature = random.uniform(26.0, 29.0)
-        humidity = random.uniform(55.0, 68.0)
+        analog = random.uniform(MQ8_IDLE_LOW, MQ8_IDLE_HIGH)
 
         while True:
-            time.sleep(DHT_SIM_INTERVAL_S)
+            time.sleep(SIM_INTERVAL_S)
 
+            # The fabricated reading does not come from the sensor board, so feed
+            # it to whichever board is actually connected — the sensor board when
+            # present, otherwise the servo board in a single-ESP setup.
             sensor = self._controllers.get(SENSOR_ROLE)
+            if sensor is None or not sensor.state()["connected"]:
+                sensor = next(
+                    (
+                        c
+                        for c in self._controllers.values()
+                        if c.state()["connected"]
+                    ),
+                    None,
+                )
             if sensor is None:
                 continue
 
             state = sensor.state()
-            if not state["connected"]:
-                continue
+            if state.get("mq8", "--") != "--":
+                continue  # the board is reporting this sensor for real
 
-            updates: dict[str, Any] = {}
-            if state.get("temperature", "--") == "--":
-                temperature = min(32.0, max(22.0, temperature + random.uniform(-0.3, 0.3)))
-                updates["temperature"] = f"{temperature:.1f}"
-            if state.get("humidity", "--") == "--":
-                humidity = min(85.0, max(35.0, humidity + random.uniform(-0.8, 0.8)))
-                updates["humidity"] = f"{humidity:.1f}"
+            analog = min(
+                MQ8_IDLE_HIGH, max(MQ8_IDLE_LOW, analog + random.uniform(-MQ8_DRIFT_STEP, MQ8_DRIFT_STEP))
+            )
 
-            if updates:
-                sensor.apply_readings(**updates)
+            # The module's digital output drops when it is triggered, so a high
+            # analog reading pairs with LOW.
+            sensor.apply_readings(
+                mq8="LOW" if analog >= MQ8_TRIGGER_COUNTS else "HIGH",
+                mq8_analog=str(int(analog)),
+            )
 
     # ------------------------------------------------------------------
     # Aggregated state
@@ -642,6 +675,8 @@ class RobotManager:
                     "humidity": state.get("humidity", "--"),
                     "mq8": state.get("mq8", "--"),
                     "mq5": state.get("mq5", "--"),
+                    "mq8_analog": state.get("mq8_analog", "--"),
+                    "mq5_analog": state.get("mq5_analog", "--"),
                 }
             )
 
@@ -681,6 +716,8 @@ class RobotManager:
             "humidity": pick("humidity"),
             "mq8": pick("mq8"),
             "mq5": pick("mq5"),
+            "mq8_analog": pick("mq8_analog"),
+            "mq5_analog": pick("mq5_analog"),
             "last_message": "",
             "last_command": self._last_command,
             "mock": all(c.mock for c in self._controllers.values()),
@@ -702,7 +739,7 @@ class RobotManager:
         self._connecting_thread.start()
         return {
             "ok": True,
-            "message": f"Searching for {len(self._controllers)} boards…",
+            "message": f"Connecting {len(self._controllers)} boards…",
         }
 
     async def _connect_all_async(self) -> None:

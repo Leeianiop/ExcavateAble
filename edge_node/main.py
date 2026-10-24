@@ -268,7 +268,7 @@ def cmd_live_stream(args: argparse.Namespace) -> int:
 
     config = _load_config(args.config)
     if args.interval is not None:
-        config.capture.shot_interval_sec = float(args.interval)
+        config.capture.live_stream_interval_sec = float(args.interval)
     if args.backend:
         config.upload.backend_url = args.backend
 
@@ -294,12 +294,12 @@ def cmd_live_stream(args: argparse.Namespace) -> int:
     from .ai import HailoInferenceEngine
     from .pipeline import BackendUploadClient
 
-    interval = max(0.1, config.capture.shot_interval_sec)
+    interval = max(0.05, config.capture.live_stream_interval_sec)
     backend_url = config.upload.backend_url.rstrip("/")
 
     print(f"\n=== Live Stream (digital twin) ===")
     print(f"  backend    : {backend_url}")
-    print(f"  interval   : {interval:.2f}s")
+    print(f"  interval   : {interval:.3f}s  (target {1.0 / interval:.0f} fps)")
     print(f"  resolution : {config.capture.width}x{config.capture.height}")
     print(f"  (Ctrl+C to stop)\n")
 
@@ -442,8 +442,9 @@ def build_parser() -> argparse.ArgumentParser:
     up.add_argument("--wait", "-w", action="store_true", help="Poll until reconstruction job completes")
     up.set_defaults(func=cmd_capture_and_upload)
 
-    ls = sub.add_parser("live-stream", help="Live stream: capture+AI-infer+push frames every second (digital twin)")
-    ls.add_argument("--interval", "-i", type=float, default=None, help="Seconds between frames (default: 1.0)")
+    ls = sub.add_parser("live-stream", help="Live stream: capture+AI-infer+push frames continuously (digital twin)")
+    ls.add_argument("--interval", "-i", type=float, default=None,
+                    help="Seconds between frames (default: config live_stream_interval_sec, 0.05 = 20 fps)")
     ls.add_argument("--backend", "-b", type=str, default=None, help="Override backend URL")
     ls.add_argument("--resolution", "-r", type=str, default=None,
                      help="Capture resolution WxH for live stream (default: config live_stream_width x live_stream_height, 1280x720)")

@@ -37,7 +37,10 @@ logger = logging.getLogger(__name__)
 
 robot_router = APIRouter()
 
-_manager = RobotManager()
+# The rig runs without live hardware: both boards are simulated so a single
+# click on Connect makes them available immediately and the MQ-8/MQ-5/DHT11
+# telemetry is fabricated instead of read over BLE.
+_manager = RobotManager(force_mock=True)
 
 
 def get_manager() -> RobotManager:

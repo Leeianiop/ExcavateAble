@@ -18,6 +18,9 @@ capture:
   live_stream_width: 1280
   live_stream_height: 720
   live_stream_save_raw: false
+  # Seconds between pushed preview frames: 0.05 = 20 fps. Independent of
+  # shot_interval_sec so live preview and stills pacing don't fight.
+  live_stream_interval_sec: 0.05
 
 hailo:
   segmentation_model_path: "./models/yolov8n_seg.hef"

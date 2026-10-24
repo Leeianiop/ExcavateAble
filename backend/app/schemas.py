@@ -143,6 +143,8 @@ class RobotDeviceState(BaseModel):
     humidity: str = "--"
     mq8: str = "--"
     mq5: str = "--"
+    mq8_analog: str = "--"
+    mq5_analog: str = "--"
 
 
 class RobotState(BaseModel):
@@ -153,6 +155,8 @@ class RobotState(BaseModel):
     humidity: str = "--"
     mq8: str = "--"
     mq5: str = "--"
+    mq8_analog: str = "--"
+    mq5_analog: str = "--"
     last_message: str = ""
     last_command: str = ""
     mock: bool = False

@@ -33,6 +33,10 @@ class CaptureConfig:
     live_stream_width: int = 1280
     live_stream_height: int = 720
     live_stream_save_raw: bool = False
+    # Seconds between pushed frames in `live-stream` mode. Kept separate from
+    # shot_interval_sec so a 20 fps preview does not change the pacing of a
+    # photogrammetry capture session. 0.05 = 20 fps.
+    live_stream_interval_sec: float = 0.05
 
 
 @dataclass

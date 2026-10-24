@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { getLiveFrame, getLiveFrameImageUrl } from "../api/live";
 import type { LiveFrameResponse } from "../types";
 
-const POLL_MS = 1000;
+const POLL_MS = 50; // 20 fps
 type FeedTab = "rgb" | "detections" | "depth";
 
 export const LiveStream: React.FC = () => {

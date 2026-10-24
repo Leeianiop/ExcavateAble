@@ -171,6 +171,8 @@ export interface RobotDeviceState {
   humidity: string;
   mq8: string;
   mq5: string;
+  mq8_analog: string;
+  mq5_analog: string;
 }
 
 export interface RobotState {
@@ -181,6 +183,8 @@ export interface RobotState {
   humidity: string;
   mq8: string;
   mq5: string;
+  mq8_analog: string;
+  mq5_analog: string;
   last_message: string;
   last_command: string;
   mock: boolean;

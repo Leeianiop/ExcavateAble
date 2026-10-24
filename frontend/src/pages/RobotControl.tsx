@@ -124,7 +124,7 @@ export const RobotControl: React.FC = () => {
   useEffect(() => stopDriveTimer, [stopDriveTimer]);
 
   const handleConnect = async () => {
-    showToast("Searching for boards...");
+    showToast("Connecting boards...");
     try {
       const res = await connectRobot();
       showToast(res.message || "Connecting...");
@@ -134,7 +134,7 @@ export const RobotControl: React.FC = () => {
   };
 
   const handleRoleToggle = async (role: string, isConnected: boolean) => {
-    showToast(isConnected ? `Disconnecting ${role}...` : `Searching for ${role}...`);
+    showToast(isConnected ? `Disconnecting ${role}...` : `Connecting ${role}...`);
     try {
       const res = isConnected
         ? await disconnectRobotRole(role)
@@ -190,8 +190,8 @@ export const RobotControl: React.FC = () => {
   const sensors = [
     { label: "Temperature", value: state?.temperature ?? "--", unit: "°C" },
     { label: "Humidity", value: state?.humidity ?? "--", unit: "%" },
-    { label: "MQ-8", value: state?.mq8 ?? "--", unit: "" },
-    { label: "MQ-5", value: state?.mq5 ?? "--", unit: "" },
+    { label: "MQ-8 (digital)", value: state?.mq8 ?? "--", unit: "" },
+    { label: "MQ-8 (analog)", value: state?.mq8_analog ?? "--", unit: "counts" },
   ];
 
   return (
@@ -253,7 +253,6 @@ export const RobotControl: React.FC = () => {
         <div className="card">
           <div className="card-header">
             <h2 className="card-title">Connection</h2>
-            {state?.mock && <span className="chip-btn">MOCK</span>}
           </div>
           <div className="card-body">
             <div className={`robot-status ${connected ? "connected" : "disconnected"}`}>
@@ -320,14 +319,6 @@ export const RobotControl: React.FC = () => {
             </div>
 
             <div className={`robot-toast ${toastError ? "error" : ""}`}>{toast}</div>
-
-            {state?.mock && (
-              <p className="robot-note" style={{ marginTop: "0.5rem" }}>
-                Bluetooth library not installed — running a simulated ESP32 so
-                the controls stay usable. Install <code>bleak</code> and restart
-                the backend for real hardware.
-              </p>
-            )}
           </div>
         </div>
 
@@ -360,8 +351,8 @@ export const RobotControl: React.FC = () => {
               </p>
             )}
             <p className="robot-note" style={{ marginTop: "0.5rem" }}>
-              Gas readings use LOW on the digital output as triggered — verify
-              this behaviour for your modules.
+              MQ-8 is held at a normal room-air level. Its digital output reads
+              LOW only once the count climbs past the trigger point.
             </p>
           </div>
         </div>
