@@ -108,3 +108,10 @@ Frontend UI: http://localhost:5173 (Demo map also available at /viewer/demo?form
 Backend API: http://localhost:8000   
 
 API Docs: `   
+
+Reflection:
+One of the major challenges was how we kept burning the buck convertors and it's money from our own pocket going down the drain and so we weren't able to get everything done in a smooth steady condition, like every certain time there would be errors like loose motor wires, software issues and such.
+
+Another challenge is that our pcb layout initial design due to the size constraints will definitely overheat, and we couldn't get good aluminium base pcb with good price, so we ended up making the fr4 four layers and used copper fill instead of line trace and hope for the best. Luckily it didn't overheat at all.
+
+
