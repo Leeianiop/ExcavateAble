@@ -22,6 +22,8 @@ power terminal block input(10.8v)negative                                       
 | 
 power terminal block output(10.8v)positive 
 power terminal block output(10.8v)negative 
+Step1
+![PCB Layout](images/pcblayout1.png)
 
 
 ## CAD 
