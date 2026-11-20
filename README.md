@@ -1,5 +1,5 @@
 ![WatchBlocks](images/1.png)
-#ExcavatAble
+# ExcavatAble
 
 ## What is Excavatable? 
 A robot designed for cave exploration, it manoeuvres left and right up and down using servos and motors, collects environmental data, and life feed of the environment. 
