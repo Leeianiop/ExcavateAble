@@ -34,16 +34,16 @@ Segment(1)---Main Segment(2)---Segment---Head Segment(3)
 (3)Head segment: pcb, two motors, 2suspensions,rasberry pi 5 16gb   
 
 Battery and buck converters are in the main segment as labeled 
-![PCB Layout](3.png)  
+![WatchBlocks](3.png)  
 To lock the suspension put in the spring first and screw along with a nut in each arrow  
-![PCB Layout](4.png)  
-![PCB Layout](5.png)  
+![WatchBlocks](4.png)  
+![WatchBlocks](5.png)  
 
 If you are a coll person and would like to install some sick RGB's install and link the wires link so
-![PCB Layout](6.png)   
+![WatchBlocks](6.png)   
 
 Cable management is important !!, Trace them thorugh the holes ( Power cables and motor Cables )  
-![PCB Layout](7.png)   
+![WatchBlocks](7.png)   
 
 Sensor attachment:  
 ENS160+AHT21 and dht11 sensor, modular design swap out at any time, extra pin coming out of the PCB.   
