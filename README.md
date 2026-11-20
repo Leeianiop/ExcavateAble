@@ -41,7 +41,7 @@ power terminal block output(10.8v)negative
 ![ExcavateAble](images/4.png)  
 ![ExcavateAble](images/5.png)  
 
-### If you are a coll person and would like to install some sick RGB's install and link the wires link so
+### If you are a cool person and would like to install some sick RGB's install and link the wires link so
 ![ExcavateAble](images/6.png)   
 
 ### Cable management is important !!, Trace them thorugh the holes ( Power cables and motor Cables )  
