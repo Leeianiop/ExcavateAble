@@ -27,6 +27,8 @@ Segment(1)---Main Segment(2)---Segment---Head Segment(3)
 (2)Main segment: 2pcb, four motors, two servos(vertical + horizontal movement),4suspensions
 (3)Head segment: pcb, two motors, 2suspensions,rasberry pi 5 16gb
 
+sensor attachment: ENS160+AHT21 and dht11 sensor, modular design swap out at any time, extra pin coming out of the pcb.
+
 
 Software
 IT takes photos from a Raspberry Pi, processes them into a 3D mesh via a FastAPI backend, and renders them in a React + WebGL web viewer
