@@ -29,25 +29,25 @@ power terminal block output(10.8v)negative
 
 
 ## CAD 
-Segment(1)---Main Segment(2)---Segment---Head Segment(3)  
+# Segment(1)---Main Segment(2)---Segment---Head Segment(3)  
 ![PCB Layout](images/2.png)
-(1)Normal segment: pcb, two motors, 2suspension, two servos(vertical + horizontal movement)  
-(2)Main segment: 2pcb, four motors, two servos(vertical + horizontal movement),4suspensions   
-(3)Head segment: pcb, two motors, 2suspensions,rasberry pi 5 16gb   
+# (1)Normal segment: pcb, two motors, 2suspension, two servos(vertical + horizontal movement)  
+# (2)Main segment: 2pcb, four motors, two servos(vertical + horizontal movement),4suspensions   
+# (3)Head segment: pcb, two motors, 2suspensions,rasberry pi 5 16gb   
 
-Battery and buck converters are in the main segment as labeled 
+# Battery and buck converters are in the main segment as labeled 
 ![ExcavateAble](images/3.png)  
-To lock the suspension put in the spring first and screw along with a nut in each arrow  
+# To lock the suspension put in the spring first and screw along with a nut in each arrow  
 ![ExcavateAble](images/4.png)  
 ![ExcavateAble](images/5.png)  
 
-If you are a coll person and would like to install some sick RGB's install and link the wires link so
+# If you are a coll person and would like to install some sick RGB's install and link the wires link so
 ![ExcavateAble](images/6.png)   
 
-Cable management is important !!, Trace them thorugh the holes ( Power cables and motor Cables )  
+# Cable management is important !!, Trace them thorugh the holes ( Power cables and motor Cables )  
 ![ExcavateAble](images/7.png)   
 
-Sensor attachment:  
+# Sensor attachment:  
 ENS160+AHT21 and dht11 sensor, modular design swap out at any time, extra pin coming out of the PCB.   
  
 
