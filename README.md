@@ -28,62 +28,76 @@ Step1
 
 ## CAD 
 Segment(1)---Main Segment(2)---Segment---Head Segment(3)  
-(1)segment: pcb, two motors, 2suspension, two servos(vertical + horizontal movement)  
+![PCB Layout](2.png)
+(1)Normal segment: pcb, two motors, 2suspension, two servos(vertical + horizontal movement)  
 (2)Main segment: 2pcb, four motors, two servos(vertical + horizontal movement),4suspensions   
 (3)Head segment: pcb, two motors, 2suspensions,rasberry pi 5 16gb   
- 
-sensor attachment: ENS160+AHT21 and dht11 sensor, modular design swap out at any time, extra pin coming out of the pcb.   
 
+Battery and buck converters are in the main segment as labeled 
+![PCB Layout](3.png)  
+To lock the suspension put in the spring first and screw along with a nut in each arrow  
+![PCB Layout](4.png)  
+![PCB Layout](5.png)  
+
+If you are a coll person and would like to install some sick RGB's install and link the wires link so
+![PCB Layout](6.png)   
+
+Cable management is important !!, Trace them thorugh the holes ( Power cables and motor Cables )  
+![PCB Layout](7.png)   
+
+Sensor attachment:  
+ENS160+AHT21 and dht11 sensor, modular design swap out at any time, extra pin coming out of the PCB.   
+ 
 
 ## Software 
 IT takes photos from a Raspberry Pi, processes them into a 3D mesh via a FastAPI backend, and renders them in a React + WebGL web viewer 
-Quickstart: Run It Locally 
-### 1. Start the Backend 
-Head into the backend folder, set up your Python environment, and start the server. It will automatically fall back to local file storage and an in-memory job store (so no Docker, Redis, or MinIO required).
+Quickstart: Run It Locally  
+### 1. Start the Backend   
+Head into the backend folder, set up your Python environment, and start the server. It will automatically fall back to local file storage and an in-memory job   store (so no Docker, Redis, or MinIO required).  
 
 Bash
-cd backend 
-python -m venv .venv 
- Windows: .venv\Scripts\activate | Mac/Linux: source .venv/bin/activate  
-pip install -r requirements.txt 
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload  
-You’ll know it's working when you see the fallback warnings in the logs. Verify it at http://localhost:8000/api/v1/health.  
-
-### 2. Start the Frontend 
-Open a new terminal window for the frontend: 
-
-Bash 
-cd frontend 
-npm install 
-npm run dev 
-Open http://localhost:5173 in your browser. You should see a green "Backend Connected" status. 
-
-### 3. Run a Full Mock Scan (End-to-End) 
-From the repo root directory (SnakeBot/), run the edge node simulation command: 
-
-Bash 
-python -m edge_node capture-and-upload --shots 20 --interval 0.1 --wait 
-This generates synthetic photos, uploads them to your local backend, runs a mock 9-stage reconstruction pipeline, and outputs a job_id. Copy that job_id, paste it into the Job Lookup field on your frontend dashboard, and check out the rendered 3D mesh in the viewer. 
-
-Using Real Hardware (Raspberry Pi 5 + Camera + Hailo-8L) 
-If you want to use actual hardware: 
-
-Find your computer's LAN IP (e.g., 192.168.1.50) so the Pi can reach your backend. 
+cd backend   
+python -m venv .venv   
+ Windows: .venv\Scripts\activate | Mac/Linux: source .venv/bin/activate   
+pip install -r requirements.txt  
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload   
+You’ll know it's working when you see the fallback warnings in the logs. Verify it at http://localhost:8000/api/v1/health.   
  
-Run the backend bound to all network interfaces: 
+### 2. Start the Frontend  
+Open a new terminal window for the frontend:  
 
-Bash 
-uvicorn app.main:app --host 0.0.0.0 --port 8000 
-Configure the Pi: SSH into your Raspberry Pi 5, navigate to edge_node/config/config.yaml, and update backend_url with your computer's LAN IP. 
+Bash   
+cd frontend  
+npm install  
+npm run dev  
+Open http://localhost:5173 in your browser. You should see a green "Backend Connected" status.  
 
-Capture: Run your health checks and captures directly on the Pi: 
+### 3. Run a Full Mock Scan (End-to-End)  
+From the repo root directory (SnakeBot/), run the edge node simulation command:  
+ 
+Bash  
+python -m edge_node capture-and-upload --shots 20 --interval 0.1 --wait  
+This generates synthetic photos, uploads them to your local backend, runs a mock 9-stage reconstruction pipeline, and outputs a job_id. Copy that job_id, paste it into the Job Lookup field on your frontend dashboard, and check out the rendered 3D mesh in the viewer.  
 
-Bash 
-python -m edge_node health-check 
-python -m edge_node capture-and-upload --shots 20 --interval 1.5 --wait 
-Default Ports & URLs 
-Frontend UI: http://localhost:5173 (Demo map also available at /viewer/demo?format=demo) 
+Using Real Hardware (Raspberry Pi 5 + Camera + Hailo-8L)  
+If you want to use actual hardware:  
 
-Backend API: http://localhost:8000 
+Find your computer's LAN IP (e.g., 192.168.1.50) so the Pi can reach your backend.  
+ 
+Run the backend bound to all network interfaces:  
 
-API Docs: ` 
+Bash  
+uvicorn app.main:app --host 0.0.0.0 --port 8000  
+Configure the Pi: SSH into your Raspberry Pi 5, navigate to edge_node/config/config.yaml, and update backend_url with your computer's LAN IP.  
+ 
+Capture: Run your health checks and captures directly on the Pi:   
+
+Bash   
+python -m edge_node health-check   
+python -m edge_node capture-and-upload --shots 20 --interval 1.5 --wait   
+Default Ports & URLs   
+Frontend UI: http://localhost:5173 (Demo map also available at /viewer/demo?format=demo)   
+
+Backend API: http://localhost:8000   
+
+API Docs: `   
