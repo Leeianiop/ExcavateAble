@@ -23,6 +23,8 @@ power terminal block input(10.8v)negative                                       
 power terminal block output(10.8v)positive 
 power terminal block output(10.8v)negative 
 
+[![PCB Schematic](images/schematic.png)](images/schematic.png)
+
 ![PCB Layout](images/pcblayout1.png)
 
 [![PCB Layout 2](images/pcblayout2.png)](images/pcblayout2.png)
