@@ -1,264 +1,82 @@
-# Excavatable — 3D Scanning System
+What is Excavatable?
+A robot designed for cave exploration, it manoeuvres left and right up and down using servos and motors, collects environmental data, and life feed of the environment.
 
-Photogrammetry-based 3D scanning pipeline. A Raspberry Pi captures photos + AI masks, a backend reconstructs a 3D mesh, and a web viewer renders it in the browser.
+Hardware
+3s 7200mah battery
+|----buck convert to 10.8v---pcb---drv8833: drive motor
+|----buck convert to 5v---pcb---esp32: to control movement of servo, sensors and servos
+|----buck convert to 6v---servo driver PCA9685: to power servo
 
-```
-Edge Node (Pi 5 + Camera + Hailo-8L)  →  Backend (FastAPI + COLMAP/OpenMVS)  →  Frontend (React + WebGL viewer)
-```
+PCB layout
+power terminal block input(5v)positive---capacitor25v 4200uf---esp32c3supermini
+power terminal block input(5v)negative
+|
+power terminal block output(5v)positive
+power terminal block output(5v)negative
 
-Every part has a **mock fallback**, so you can run the whole pipeline on a plain laptop with **no hardware** and **no 3D binaries**.
+power terminal block input(10.8v)positive ----capacitor25v 4200uf---drv8833 motor driver---terminal block motor(left)
+power terminal block input(10.8v)negative                                             |---terminal block motor(right)
+|
+power terminal block output(10.8v)positive
+power terminal block output(10.8v)negative
 
-> Product name: **Excavatable**. The repo folder path is still `SnakeBot/`, so the commands below keep that filesystem path.
 
----
+CAD
+Segment(1)---Main Segment(2)---Segment---Head Segment(3)
+(1)segment: pcb, two motors, 2suspension, two servos(vertical + horizontal movement)
+(2)Main segment: 2pcb, four motors, two servos(vertical + horizontal movement),4suspensions
+(3)Head segment: pcb, two motors, 2suspensions,rasberry pi 5 16gb
 
-## Project Layout
 
-```
-SnakeBot/
-├── backend/        FastAPI API + Celery worker + MinIO/Redis (3D reconstruction)
-├── edge_node/      Raspberry Pi capture code (camera + Hailo AI + upload)
-├── frontend/       React + Vite + Three.js web viewer
-└── hardware/       CAD/PCB files (not needed for software)
-```
+Software
+IT takes photos from a Raspberry Pi, processes them into a 3D mesh via a FastAPI backend, and renders them in a React + WebGL web viewer
+Quickstart: Run It Locally
+1. Start the Backend
+Head into the backend folder, set up your Python environment, and start the server. It will automatically fall back to local file storage and an in-memory job store (so no Docker, Redis, or MinIO required).
 
-- **Backend docs:** [backend/README.txt](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/backend/README.txt)
-- **Frontend docs:** [frontend/README.md](file:///C:/Users/seeru/OneDrive/Desktop/SnakeBot/frontend/README.md)
-
----
-
-## Prerequisites
-
-| Tool        | Minimum | Why |
-|-------------|---------|-----|
-| Python      | 3.11    | Backend + edge node |
-| Node.js     | 18      | Frontend (Vite) |
-| Docker      | 24      | Backend (easiest path) |
-
-> Don't have Docker? You can run the backend locally too (see below).
-
----
-
-## Actual Commands In This Repo
-
-### Frontend npm scripts
-
-Run these from `frontend/`:
-
-```bash
-npm run dev
-npm run build
-npm run preview
-npm run lint
-```
-
-### Edge node CLI commands
-
-Run these from the repo root:
-
-```bash
-python -m edge_node health-check
-python -m edge_node verify-hailo
-python -m edge_node capture --shots 20 --interval 1.2
-python -m edge_node capture-and-upload --shots 20 --interval 1.5 --wait
-python -m edge_node live-stream --interval 1.5 --resolution 1280x720
-```
-
-`python -m edge_node` is the real package entrypoint. `python -m edge_node.main` also works, but the package entrypoint is the cleaner command.
-
----
-
-## 1. Backend Setup
-
-The backend runs on port **8000**. It needs Redis + MinIO, but has built-in fallbacks so you can skip them for local dev.
-
-### Option A — Docker (recommended, one command)
-
-```bash
-cd backend
-cp .env.example .env
-docker compose up --build -d
-```
-
-That starts 4 services: Redis, MinIO, the FastAPI API, and the Celery worker.
-
-Wait ~30 seconds, then verify:
-
-```bash
-curl http://localhost:8000/api/v1/health
-# {"status":"ok",...}
-```
-
-### Option B — Local (no Docker)
-
-```bash
+Bash
 cd backend
 python -m venv .venv
-
-# Windows
-.venv\Scripts\activate
-# macOS / Linux
-source .venv/bin/activate
-
+# Windows: .venv\Scripts\activate | Mac/Linux: source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
+You’ll know it's working when you see the fallback warnings in the logs. Verify it at http://localhost:8000/api/v1/health.
 
-When you see these two warnings in the log, it's **working correctly**:
+2. Start the Frontend
+Open a new terminal window for the frontend:
 
-- `MinIO unreachable ... falling back to FS storage`
-- `Redis unavailable ... using in-memory job store`
-
-The backend automatically falls back to local files and an in-memory store. No Redis or MinIO needed.
-
-Verify:
-
-```bash
-curl http://localhost:8000/api/v1/health
-# {"status":"ok",...}
-```
-
-> **Windows note:** if `pip install` or `python -m venv` fails with a sandbox/permission error, run the commands in your own PowerShell window (not inside an IDE terminal).
-
----
-
-## 2. Frontend Setup
-
-The frontend runs on port **5173** and automatically proxies API calls to `localhost:8000`.
-
-```bash
+Bash
 cd frontend
 npm install
 npm run dev
-```
+Open http://localhost:5173 in your browser. You should see a green "Backend Connected" status.
 
-Open **http://localhost:5173** in your browser. You should see the Dashboard with a green **"Backend Connected"** status pill (if the backend is running).
+3. Run a Full Mock Scan (End-to-End)
+From the repo root directory (SnakeBot/), run the edge node simulation command:
 
-Even with no completed scans yet, the site now includes a built-in **Demo Map** at `/viewer/demo?format=demo` so you always have a fake excavation scene to show.
+Bash
+python -m edge_node capture-and-upload --shots 20 --interval 0.1 --wait
+This generates synthetic photos, uploads them to your local backend, runs a mock 9-stage reconstruction pipeline, and outputs a job_id. Copy that job_id, paste it into the Job Lookup field on your frontend dashboard, and check out the rendered 3D mesh in the viewer.
 
-To build for production:
+Using Real Hardware (Raspberry Pi 5 + Camera + Hailo-8L)
+If you want to use actual hardware:
 
-```bash
-npm run build
-```
+Find your computer's LAN IP (e.g., 192.168.1.50) so the Pi can reach your backend.
 
----
+Run the backend bound to all network interfaces:
 
-## 3. End-to-End Test (no hardware needed)
-
-Once both backend and frontend are running, you can run a full mock scan.
-
-> **Run this from the repo root** (`SnakeBot/`), **not** from inside `edge_node/`. Running from inside `edge_node/` gives `No module named edge_node`.
-
-```bash
-# From the repo root (SnakeBot/)
-# (use backend's venv if you don't have a global Python with the deps)
-backend\.venv\Scripts\python -m edge_node capture-and-upload --shots 20 --interval 0.1 --wait
-```
-
-This:
-1. Generates 20 synthetic photos + masks + depth maps
-2. Uploads them to the backend (3-phase protocol with SHA-256 checksums)
-3. The backend runs a 9-stage reconstruction pipeline (mock mode → synthetic PLY/GLB)
-4. Waits for the job to complete
-
-When it finishes, a big banner prints the `job_id`. Copy it, then paste it into the **Dashboard → Job Lookup** field on the frontend. You'll see the 9-stage progress timeline, then **Open 3D Viewer** to see the rendered mesh.
-
----
-
-## 4. Edge Node (real hardware — Raspberry Pi 5)
-
-This section connects a real Raspberry Pi 5 (with Camera Module v3 + Hailo-8L) to your backend.
-
-### Step 1 — Find your backend's LAN IP
-
-The Pi cannot reach `localhost` (that points to the Pi itself). You need your Windows/Mac machine's LAN IP.
-
-**Windows PowerShell:**
-```powershell
-ipconfig | Select-String "IPv4"
-```
-**macOS/Linux:**
-```bash
-ipconfig getifaddr en0   # or: hostname -I
-```
-You'll get something like `192.168.1.50`. **Write this down.**
-
-### Step 2 — Start the backend so the Pi can reach it
-
-The backend must bind to `0.0.0.0` (not `127.0.0.1`) so other devices on the network can connect:
-
-```bash
-cd backend
+Bash
 uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
+Configure the Pi: SSH into your Raspberry Pi 5, navigate to edge_node/config/config.yaml, and update backend_url with your computer's LAN IP.
 
-### Step 3 — Set up the Pi
+Capture: Run your health checks and captures directly on the Pi:
 
-SSH into the Pi (Raspberry Pi OS Bookworm 64-bit):
-
-```bash
-sudo apt install -y python3-picamera2 python3-libcamera python3-pip python3-venv
-sudo apt install -y hailort hailort-py   # Hailo-8L SDK
-
-cd ~/SnakeBot/edge_node
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-### Step 4 — Point the Pi at your backend
-
-Edit `edge_node/config/config.yaml` on the Pi and set `backend_url` to your machine's LAN IP from Step 1:
-
-```yaml
-upload:
-  backend_url: "http://192.168.1.50:8000"   # ← your LAN IP here
-```
-
-### Step 5 — Run a real scan
-
-```bash
-cd ~/SnakeBot
-python -m edge_node health-check            # verifies camera + Hailo + backend reachability
+Bash
+python -m edge_node health-check
 python -m edge_node capture-and-upload --shots 20 --interval 1.5 --wait
-```
+Default Ports & URLs
+Frontend UI: http://localhost:5173 (Demo map also available at /viewer/demo?format=demo)
 
-The big banner prints the `job_id`. Paste it into **http://localhost:5173** → Job Lookup → Open 3D Viewer.
+Backend API: http://localhost:8000
 
-> You also need Hailo `.hef` model files in `edge_node/models/` (download `yolov8n-seg.hef` + `dpt_lite.hef` from the [Hailo Model Zoo](https://github.com/hailo-ai/hailo_model_zoo)). Without them, the AI inference falls back to mock masks/depth.
-
-> For demos where the real model does not recognize your custom artifact class, the edge node includes a fallback **heuristic artifact detector**. It is gated to **close-range objects (~10 cm from the lens)**: it labels large, dark, centered blobs as `artifact` and ignores small or distant ones. This is meant for showcasing the workflow, not as a real trained detector.
-
----
-
-## Default URLs & Credentials
-
-| Service    | URL | Credentials |
-|------------|-----|-------------|
-| Frontend   | http://localhost:5173 | — |
-| Backend API | http://localhost:8000 | — |
-| API Docs   | http://localhost:8000/docs | — |
-| MinIO (Docker only) | http://localhost:9001 | minioadmin / minioadmin |
-| Redis (Docker only) | localhost:6379 | — |
-
----
-
-## How It Works (30-second version)
-
-1. **Edge node** captures RGB photos, runs Hailo-8L segmentation + depth, builds a manifest.
-2. **Upload** is 3-phase: `POST /bundles/init` → `PUT` each shot's 5 files → `POST /bundles/finalize` (with SHA-256 manifest check).
-3. **Backend** queues a 9-stage Celery job: download → background-strip → COLMAP sparse → COLMAP dense → OpenMVS fusion → mesh post-process → export PLY → export GLB → upload assets.
-4. **Frontend** polls `GET /jobs/{id}` every 2s, shows a progress timeline, and streams the GLB/PLY into a WebGL viewer (OrbitControls, auto-rotate, format toggle). It also includes a built-in fake **Demo Map** viewer for presentations.
-
----
-
-## What's Missing / Next Steps
-
-For a full production scan (not mock), you still need:
-
-- **COLMAP + OpenMVS binaries** installed on the backend host (or use the CUDA Dockerfile). Without them, the worker outputs a synthetic mesh.
-- **Hailo `.hef` model files** (`yolov8n-seg.hef`, `dpt_lite.hef`) in `edge_node/models/` for real AI inference.
-- **Raspberry Pi 5 + Camera Module v3 + Hailo-8L HAT** for real captures.
-
-For software completeness, everything else is in place and verified: backend runs, frontend builds, types match across layers, and the mock pipeline runs end-to-end.
+API Docs: `
