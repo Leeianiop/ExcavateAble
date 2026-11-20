@@ -29,6 +29,7 @@ power terminal block output(10.8v)negative
 
 [![PCB Layout 2](images/pcblayout2.png)](images/pcblayout2.png)
 
+[![Soldered PCB Layout](images/pcblayoutsoldered.jpeg)](images/pcblayoutsoldered.jpeg)
 
 ## CAD 
 ### Segment(1)---Main Segment(2)---Segment---Head Segment(3)  
